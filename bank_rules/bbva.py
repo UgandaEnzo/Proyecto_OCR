@@ -8,20 +8,34 @@ class BBVAStrategy(BankStrategy):
         super().__init__("BBVA Provincial")
 
     def procesar_comprobante(self, imagen, texto_completo):
-        # Re-escalado 200% y Denoising
-        resized = cv2.resize(imagen, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-        gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
-        denoised = cv2.fastNlMeansDenoising(gray, None, h=10, templateWindowSize=7, searchWindowSize=21)
-        _, thresh = cv2.threshold(denoised, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        # 1. Recorte del tercio superior (Header)
+        h, w = imagen.shape[:2]
+        header = imagen[:int(h * 0.33), :]
         
-        txt_monto = pytesseract.image_to_string(thresh, config='--psm 6')
+        # 2. Preprocesamiento: Invertir colores (Letras blancas -> Negras)
+        gray = cv2.cvtColor(header, cv2.COLOR_BGR2GRAY)
+        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        
+        txt_header = pytesseract.image_to_string(thresh, config='--psm 6')
         
         monto = 0.0
-        matches = re.findall(r'(\d[\d\.,]*)', txt_monto)
-        for m in matches:
-            if re.match(r'^\d{1,3}(\.\d{3})*,\d{2}$', m):
+        
+        # Función para buscar el número más grande que empiece por 'Bs.'
+        def buscar_maximo_monto(txt):
+            # Regex: Bs. (espacio opcional) numero
+            matches = re.findall(r'Bs\.?\s*(\d{1,3}(?:[.,]\d{3})*[.,]\d{2})', txt, re.IGNORECASE)
+            max_val = 0.0
+            for m in matches:
                 val = self.limpiar_monto(m)
-                if val > 0: monto = max(monto, val)
-                
+                if val > max_val: max_val = val
+            return max_val
+
+        # Intentar en header procesado (prioridad)
+        monto = buscar_maximo_monto(txt_header)
+        
+        # Fallback: Intentar en texto completo si no se halló en header
+        if monto == 0.0:
+            monto = buscar_maximo_monto(texto_completo)
+            
         referencia = self.extract_generic_reference(texto_completo)
         return {"banco": self.name, "referencia": referencia, "monto": monto, "status": "procesado", "texto_completo": texto_completo}

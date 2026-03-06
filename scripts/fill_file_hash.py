@@ -12,6 +12,11 @@ Nota: en producción recomendamos hacer una migración con Alembic para añadir 
 
 import hashlib
 import os
+import sys
+
+# Agregar el directorio raíz al path para poder importar database y models
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from database import SessionLocal
 import models
 

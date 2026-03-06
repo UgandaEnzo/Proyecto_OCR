@@ -1,429 +1,422 @@
-from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Header
-from fastapi.responses import RedirectResponse
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
-from typing import Optional
-from sqlalchemy.orm import Session
-from sqlalchemy import exc as sa_exc
-import shutil
 import os
+import shutil
 import uuid
 import json
+import logging
 import hashlib
+from enum import Enum
+from typing import Optional, List
+from dotenv import load_dotenv
 
-# Importamos nuestros módulos
-from database import engine, Base, get_db
+from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Header, Body
+from fastapi.responses import JSONResponse, FileResponse, Response, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm import Session
+from sqlalchemy import func, desc
+from datetime import datetime
+from pydantic import BaseModel
+
+# Carga las variables de entorno desde un archivo .env ANTES de importar módulos locales
+load_dotenv()
+
+# Importamos tus módulos
+from database import engine, get_db
 import models
-import threading
+import ocr_engine  # Tu motor de OCR
 
-# Instancia de la app
+# Configuración de Logs (para ver errores en la consola negra)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Crear tablas si no existen
+models.Base.metadata.create_all(bind=engine)
+logger.info("Sistema de Base de Datos inicializado: Tablas verificadas/creadas.")
+
 app = FastAPI()
 
-# Montar static y garantizar carpeta uploads
-if not os.path.exists("uploads"):
-    os.makedirs("uploads", exist_ok=True)
+# Montar carpetas estáticas
+os.makedirs("uploads", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
+# --- RUTA PARA FAVICON ---
+@app.get('/favicon.ico', include_in_schema=False)
+async def favicon():
+    favicon_path = os.path.join("static", "favicon.ico")
+    if os.path.exists(favicon_path):
+        return FileResponse(favicon_path)
+    else:
+        # Si no tienes un favicon, devuelve una respuesta vacía para evitar el error 404 en los logs.
+        # El navegador no volverá a pedirlo en esta sesión.
+        return Response(status_code=204)
 
-# Función simple para validar API key opcional
-def require_api_key(x_api_key: Optional[str]):
-    configured = os.getenv("API_KEY")
-    if configured:
-        if not x_api_key or x_api_key != configured:
-            raise HTTPException(status_code=401, detail="API key inválida")
-    return True
+# --- MODELOS PYDANTIC (Para validar datos que entran) ---
 
-# Crear tablas en background para no bloquear el proceso principal
-def _create_tables_bg():
-    try:
-        models.Base.metadata.create_all(bind=engine)
-    except Exception as e:
-        print(f"Advertencia: no se pudieron crear tablas en startup: {e}")
-    # no devolvemos nada; la creación de tablas fue intentada en background
+# Modelo para el estado del pago, asegura que solo se usen valores válidos
+class EstadoPago(str, Enum):
+    no_verificado = "no_verificado"
+    verificado = "verificado"
+    falso = "falso"
+
+class EstadoUpdate(BaseModel):
+    estado: EstadoPago
+
+# Modelos para Clientes
+class ClienteBase(BaseModel):
+    nombre: str
+    cedula: Optional[str] = None
+    telefono: Optional[str] = None
+
+class Cliente(ClienteBase):
+    id: int
+    class Config:
+        from_attributes = True
+
+# Modelo para mostrar un pago dentro de la lista de historial de un cliente
+class PagoParaCliente(BaseModel):
+    id: int
+    referencia: str
+    monto: float
+    fecha_registro: datetime
+    estado: str
+
+    class Config:
+        from_attributes = True
+
+# Modelo de respuesta para el historial de un cliente
+class ClienteConPagos(Cliente):
+    pagos: List[PagoParaCliente] = []
 
 
-# Lanzar background thread para crear tablas sin bloquear import
-threading.Thread(target=_create_tables_bg, daemon=True).start()
+class PagoManual(BaseModel):
+    banco: str
+    referencia: str
+    monto: float
+    cliente_id: Optional[int] = None
+
+# --- FUNCIONES AUXILIARES ---
+def registrar_auditoria(db: Session, pago_id: int, accion: str, detalles: str):
+    """Función para ahorrar trabajo: registra movimientos en el historial"""
+    nuevo_historial = models.PagoHistory(
+        pago_id=pago_id,
+        accion=accion,
+        detalles=detalles,
+        usuario="sistema_ia"
+    )
+    db.add(nuevo_historial)
+    db.commit()
+
+# --- RUTAS ---
+
+# Redirecciones útiles para la UI del frontend
+@app.get("/", include_in_schema=False)
+def root_redirect():
+    """Redirige a la interfaz web estática."""
+    return RedirectResponse(url="/static/index.html")
 
 
-@app.post("/subir-pago/")
-def subir_pago(file: UploadFile = File(...), db: Session = Depends(get_db), x_api_key: Optional[str] = Header(None)):
-    """Subir imagen de comprobante, ejecutar OCR, detectar duplicados por hash y crear/mergear registro.
-    Captura y registra cualquier excepción en `logs/subir_trace.log` para debugging.
-    """
-    require_api_key(x_api_key)
-    import traceback
-    try:
-        filename = f"{uuid.uuid4().hex}_{os.path.basename(file.filename)}"
-        file_path = f"uploads/{filename}"
+@app.get("/panel")
+def panel_redirect():
+    """Endpoint visible en la documentación que abre la vista del panel web."""
+    return RedirectResponse(url="/static/index.html")
 
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+# --- NUEVAS RUTAS PARA CLIENTES ---
 
-        # Calcular hash SHA256 del archivo subido para detectar duplicados
-        def _sha256(path):
-            h = hashlib.sha256()
-            with open(path, "rb") as f:
-                for chunk in iter(lambda: f.read(1024*64), b""):
-                    h.update(chunk)
-            return h.hexdigest()
+@app.post("/clientes/", response_model=Cliente, status_code=201)
+def crear_cliente(cliente: ClienteBase, db: Session = Depends(get_db)):
+    """Crea un nuevo cliente en la base de datos."""
+    if cliente.cedula:
+        db_cliente = db.query(models.Cliente).filter(models.Cliente.cedula == cliente.cedula).first()
+        if db_cliente:
+            raise HTTPException(status_code=409, detail=f"Un cliente con la cédula {cliente.cedula} ya existe.")
+    
+    nuevo_cliente = models.Cliente(nombre=cliente.nombre, cedula=cliente.cedula, telefono=cliente.telefono)
+    db.add(nuevo_cliente)
+    db.commit()
+    db.refresh(nuevo_cliente)
+    return nuevo_cliente
 
-        try:
-            new_hash = _sha256(file_path)
-            new_size = os.path.getsize(file_path)
-        except Exception:
-            new_hash = None
-            new_size = None
+@app.get("/clientes/", response_model=List[Cliente])
+def leer_clientes(db: Session = Depends(get_db)):
+    """Obtiene una lista de todos los clientes."""
+    return db.query(models.Cliente).all()
 
-        # Buscar duplicados comparando tamaño y hash de archivos ya subidos
-        if new_hash:
-            try:
-                existing = db.query(models.Pago).filter(models.Pago.file_hash == new_hash).first()
-                if existing:
-                    try:
-                        os.remove(file_path)
-                    except Exception:
-                        pass
-                    return {"mensaje": "Archivo duplicado detectado (hash). Ya existe un pago con este archivo.", "id_existente": existing.id, "referencia": existing.referencia}
-
-                # Si no hay match por hash en DB, comprobamos contra archivos guardados (registros antiguos)
-                # ADVERTENCIA: Esto es costoso (O(N)). Idealmente, ejecutar un script de migración para calcular hashes de todos los archivos antiguos
-                # y guardarlos en DB, para eliminar este bloque 'else' en el futuro.
-                all_pagos = db.query(models.Pago).filter(models.Pago.ruta_imagen.isnot(None)).all()
-                for p in all_pagos:
-                    try:
-                        if not p.ruta_imagen:
-                            continue
-                        if not os.path.exists(p.ruta_imagen):
-                            continue
-                        if new_size is not None and os.path.getsize(p.ruta_imagen) != new_size:
-                            continue
-                        if _sha256(p.ruta_imagen) == new_hash:
-                            try:
-                                import ocr_engine
-                                resultado_dup = ocr_engine.procesar_imagen(file_path)
-                            except Exception:
-                                resultado_dup = {}
-
-                            detalles = {}
-                            updated = False
-                            try:
-                                if resultado_dup.get('referencia') and resultado_dup.get('referencia') != p.referencia:
-                                    detalles['referencia'] = {'old': p.referencia, 'new': resultado_dup.get('referencia')}
-                                    p.referencia = resultado_dup.get('referencia')
-                                    updated = True
-                                if resultado_dup.get('banco') and resultado_dup.get('banco') != p.banco_origen:
-                                    detalles['banco_origen'] = {'old': p.banco_origen, 'new': resultado_dup.get('banco')}
-                                    p.banco_origen = resultado_dup.get('banco')
-                                    updated = True
-                                if resultado_dup.get('monto') is not None and resultado_dup.get('monto') != p.monto:
-                                    detalles['monto'] = {'old': p.monto, 'new': resultado_dup.get('monto')}
-                                    p.monto = resultado_dup.get('monto')
-                                    updated = True
-
-                                if not p.file_hash and new_hash:
-                                    p.file_hash = new_hash
-                                    detalles['file_hash'] = {'old': None, 'new': new_hash}
-                                    updated = True
-
-                                if updated:
-                                    db.add(p)
-                                    db.commit()
-                                    db.refresh(p)
-                                    try:
-                                        hist = models.PagoHistory(pago_id=p.id, accion="merge", detalles=json.dumps(detalles), usuario=None)
-                                        db.add(hist)
-                                        db.commit()
-                                    except Exception:
-                                        db.rollback()
-                            except Exception:
-                                db.rollback()
-
-                            try:
-                                os.remove(file_path)
-                            except Exception:
-                                pass
-
-                            return {"mensaje": "Archivo duplicado detectado. Registro existente actualizado" if updated else "Archivo duplicado detectado. No se realizaron cambios", "id_existente": p.id, "referencia": p.referencia}
-                    except Exception:
-                        continue
-            except Exception:
-                # si falla la comprobación de duplicados, continuamos normalmente
-                pass
-
-        # Ejecutar OCR
-        try:
-            import ocr_engine
-            resultado = ocr_engine.procesar_imagen(file_path)
-        except Exception as e:
-            print(f"Error crítico en OCR: {e}")
-            resultado = {
-                "referencia": "Error OCR",
-                "banco": "Desconocido",
-                "monto": 0.0,
-                "status": "requiere_revision"
-            }
-
-        # Crear objeto para guardar en BD
-        nuevo_pago = models.Pago(
-            referencia=resultado.get("referencia", "No detectada"),
-            banco_origen=resultado.get("banco", "Desconocido"),
-            monto=resultado.get("monto", 0.0),
-            ruta_imagen=file_path,
-            file_hash=new_hash if new_hash else None,
-        )
-
-        # Guardar en PostgreSQL (asegurar que la sesión no está en estado abortado)
-        try:
-            db.rollback()
-        except Exception:
-            pass
-        try:
-            db.add(nuevo_pago)
-            db.commit()
-            db.refresh(nuevo_pago)
-        except sa_exc.ProgrammingError:
-            # Posible esquema antiguo sin columna `file_hash`.
-            db.rollback()
-            # Reintentar sin `file_hash` para compatibilidad con BD antigua
-            nuevo_pago_nohash = models.Pago(
-                referencia=resultado.get("referencia", "No detectada"),
-                banco_origen=resultado.get("banco", "Desconocido"),
-                monto=resultado.get("monto", 0.0),
-                ruta_imagen=file_path,
-            )
-            db.add(nuevo_pago_nohash)
-            db.commit()
-            db.refresh(nuevo_pago_nohash)
-            nuevo_pago = nuevo_pago_nohash
-
-        # Registrar historial de creación
-        try:
-            detalles = {"file_hash": new_hash}
-            hist = models.PagoHistory(pago_id=nuevo_pago.id, accion="create", detalles=json.dumps(detalles), usuario=None)
-            db.add(hist)
-            db.commit()
-        except Exception:
-            db.rollback()
-
-        return {
-            "mensaje": "Pago procesado exitosamente",
-            "datos_extraidos": resultado,
-            "id_registro": nuevo_pago.id,
-        }
-    except Exception:
-        tb = traceback.format_exc()
-        try:
-            os.makedirs('logs', exist_ok=True)
-            with open('logs/subir_trace.log', 'a', encoding='utf-8') as fh:
-                fh.write(tb + "\n---\n")
-        except Exception:
-            pass
-        return {"error": "Internal Server Error", "trace": tb}
-
+@app.get("/clientes/{cliente_id}/pagos", response_model=ClienteConPagos)
+def leer_pagos_de_cliente(cliente_id: int, db: Session = Depends(get_db)):
+    """Obtiene los detalles de un cliente y todos sus pagos asociados."""
+    cliente = db.query(models.Cliente).filter(models.Cliente.id == cliente_id).first()
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    # Pydantic usa la relación `cliente.pagos` para poblar la respuesta
+    return cliente
 
 @app.get("/ver-pagos/")
-def leer_pagos(limit: int = 50, offset: int = 0, db: Session = Depends(get_db)):
-    """Ver pagos con paginación server-side. Devuelve items y total."""
-    query = db.query(models.Pago)
-    total = query.count()
-    items = query.order_by(models.Pago.id.desc()).offset(offset).limit(limit).all()
-    return {"items": items, "total": total}
+def leer_pagos(page: int = 1, size: int = 10, limit: Optional[int] = None, offset: Optional[int] = None, db: Session = Depends(get_db)):
+    # Compatibilidad: Si el frontend envía limit/offset (cache antiguo), calculamos la página
+    if limit:
+        size = limit
+    if offset is not None:
+        page = (offset // size) + 1
 
+    # Lógica de paginación de SQL
+    # Si page=1, skip=0. Si page=2, skip=10.
+    skip = (page - 1) * size
+    
+    pagos = db.query(models.Pago).order_by(desc(models.Pago.id)).offset(skip).limit(size).all()
+    total = db.query(models.Pago).count()
+    
+    return {
+        "items": pagos,
+        "total": total,
+        "page": page,
+        "pages": (total + size - 1) // size # Cálculo rápido del total de páginas
+    }
 
 @app.get("/buscar-pagos/")
-def buscar_pagos(q: Optional[str] = None, limit: int = 50, offset: int = 0, db: Session = Depends(get_db)):
-    """Buscar pagos por referencia u otras coincidencias parciales con paginación."""
-    query = db.query(models.Pago)
-    if not q:
-        total = query.count()
-        items = query.order_by(models.Pago.id.desc()).offset(offset).limit(limit).all()
-        return {"items": items, "total": total}
+def buscar_pagos(q: str, page: int = 1, size: int = 10, limit: Optional[int] = None, offset: Optional[int] = None, db: Session = Depends(get_db)):
+    if limit:
+        size = limit
+    if offset is not None:
+        page = (offset // size) + 1
 
-    q_clean = q.strip()
-    if len(q_clean) <= 4 and q_clean.isdigit():
-        filt = models.Pago.referencia.ilike(f"%{q_clean}")
-    else:
-        filt = models.Pago.referencia.ilike(f"%{q_clean}%")
+    skip = (page - 1) * size
+    query = db.query(models.Pago).filter(models.Pago.referencia.contains(q))
+    total = query.count()
+    pagos = query.order_by(desc(models.Pago.id)).offset(skip).limit(size).all()
+    return {
+        "items": pagos, 
+        "total": total,
+        "page": page,
+        "pages": (total + size - 1) // size
+    }
 
-    qobj = query.filter(filt)
-    total = qobj.count()
-    items = qobj.order_by(models.Pago.id.desc()).offset(offset).limit(limit).all()
-    return {"items": items, "total": total}
+# --- 1. RUTA PARA SUBIR IMAGEN (Corrección para que funcione el botón) ---
+@app.post("/subir-pago/")
+async def subir_pago(
+    file: UploadFile = File(...), 
+    cliente_id: Optional[int] = Form(None),
+    comentario: Optional[str] = Form(None),
+    x_api_key: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    try:
+        # 1. Guardar archivo
+        file_ext = file.filename.split(".")[-1]
+        filename = f"{uuid.uuid4()}.{file_ext}"
+        filepath = os.path.join("uploads", filename)
+        
+        with open(filepath, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        # 2. Calcular Hash (SHA256 real)
+        sha256_hash = hashlib.sha256()
+        with open(filepath, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        file_hash_str = sha256_hash.hexdigest()
 
+        # --- VALIDACIÓN ANTI-DUPLICADO POR HASH (IMAGEN EXACTA) ---
+        # Si subes exactamente el mismo archivo, lo bloqueamos antes de gastar recursos en OCR
+        if db.query(models.Pago).filter(models.Pago.file_hash == file_hash_str).first():
+            if os.path.exists(filepath):
+                os.remove(filepath)
+            return JSONResponse(
+                content={"mensaje": "Error: Esta imagen ya fue procesada anteriormente (Duplicado exacto)."}, 
+                status_code=409
+            )
 
-class PagoUpdate(BaseModel):
-    referencia: Optional[str] = None
-    banco_origen: Optional[str] = None
-    monto: Optional[float] = None
+        # 3. Procesar con OCR
+        resultado = ocr_engine.procesar_imagen(filepath)
+        
+        # Extraemos los datos clave para la validación
+        ref_ocr = resultado.get("referencia", "S/R")
+        banco_origen = resultado.get("banco_origen") or resultado.get("banco", "Desconocido")
+        monto_ocr = float(resultado.get("monto") or 0.0)
 
+        # --- VALIDACIÓN ANTI-DUPLICADO ---
+        if ref_ocr not in ["S/R", "No detectada"]:
+            pago_existente = db.query(models.Pago).filter(
+                models.Pago.referencia == ref_ocr,
+                models.Pago.banco_origen == banco_origen,
+                models.Pago.monto == monto_ocr
+            ).first()
+            if pago_existente:
+                # Si es duplicado, borramos la imagen física que acabamos de subir
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+                return JSONResponse(
+                    content={"mensaje": f"Error: Ya existe un pago con la misma referencia ({ref_ocr}), banco ({banco_origen}) y monto."}, 
+                    status_code=409
+                )
 
-@app.put("/editar-pago/{pago_id}")
-def editar_pago_id(pago_id: int, cambios: PagoUpdate, db: Session = Depends(get_db), x_api_key: Optional[str] = Header(None)):
-    """Editar un pago directamente por su ID interno.
-    Actualiza solo los campos enviados (referencia, banco_origen, monto).
-    """
-    require_api_key(x_api_key)
+        # 4. Guardar en BD
+        banco_destino = resultado.get("banco_destino") # Puede ser None
 
+        nuevo_pago = models.Pago(
+            referencia=ref_ocr,
+            banco_origen=banco_origen,
+            banco_destino=banco_destino,
+            monto=monto_ocr,
+            ruta_imagen=filepath,
+            file_hash=file_hash_str,
+            cliente_id=cliente_id
+        )
+        db.add(nuevo_pago)
+        db.commit()
+        db.refresh(nuevo_pago)
+
+        # 5. Auditoría (PagoHistory)
+        origen_datos = resultado.get("source", "RULES_LEGACY") # Default si no viene
+        
+        # Preparamos detalles enriquecidos
+        detalles_audit = f"Creado vía /subir-pago/. Motor: {origen_datos}. Ref: {ref_ocr}"
+        if banco_destino:
+             detalles_audit += f". Origen: {banco_origen} -> Destino: {banco_destino}"
+
+        registrar_auditoria(
+            db, 
+            pago_id=nuevo_pago.id, 
+            accion="create_ia", 
+            detalles=detalles_audit
+        )
+        
+        return JSONResponse(content={"mensaje": "Procesado correctamente", "data": resultado}, status_code=200)
+
+    except Exception as e:
+        logger.error(f"Error subiendo pago: {e}")
+        return JSONResponse(content={"detail": str(e)}, status_code=500)
+
+# --- 2. RUTA PARA REGISTRO MANUAL (Nueva) ---
+@app.post("/pago-manual/")
+def crear_pago_manual(dato: PagoManual, db: Session = Depends(get_db)):
+    try:
+        # --- VALIDACIÓN ANTI-DUPLICADO MEJORADA ---
+        pago_existente = db.query(models.Pago).filter(
+            models.Pago.referencia == dato.referencia,
+            models.Pago.banco_origen == dato.banco,
+            models.Pago.monto == dato.monto
+        ).first()
+        if pago_existente:
+            raise HTTPException(status_code=409, detail=f"Error: Ya existe un pago con la misma referencia, banco y monto.")
+
+        nuevo_pago = models.Pago(
+            referencia=dato.referencia,
+            banco_origen=dato.banco, # Banco is required on manual
+            monto=dato.monto, 
+            ruta_imagen="", # Vacío porque es manual
+            file_hash="MANUAL",
+            cliente_id=dato.cliente_id
+        )
+        db.add(nuevo_pago)
+        db.commit()
+        db.refresh(nuevo_pago)
+
+        registrar_auditoria(
+            db, 
+            pago_id=nuevo_pago.id, 
+            accion="create_manual", 
+            detalles="Registro manual por el usuario"
+        )
+        return {"mensaje": "Pago manual registrado"}
+    except Exception as e:
+        logger.error(f"Error manual: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- 3. RUTA PARA RE-PROCESAR (Nueva) ---
+@app.post("/reprocesar/{pago_id}")
+def reprocesar_pago(pago_id: int, db: Session = Depends(get_db)):
+    # 1. Buscar el pago
+    pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
+    if not pago:
+        raise HTTPException(status_code=404, detail="Pago no encontrado")
+    
+    if not pago.ruta_imagen or not os.path.exists(pago.ruta_imagen):
+        raise HTTPException(status_code=400, detail="Este pago no tiene imagen para reprocesar")
+
+    try:
+        # 2. Ejecutar OCR de nuevo
+        resultado = ocr_engine.procesar_imagen(pago.ruta_imagen)
+        
+        # 3. Actualizar datos (No borramos para mantener el ID, solo actualizamos)
+        # BUGFIX: Usar el mismo patrón que en /subir-pago para obtener el banco
+        banco_nuevo = resultado.get("banco_origen") or resultado.get("banco", pago.banco_origen)
+        banco_dest_nuevo = resultado.get("banco_destino", pago.banco_destino)
+        ref_nueva = resultado.get("referencia", pago.referencia)
+        monto_nuevo = float(resultado.get("monto") or pago.monto)
+
+        pago.referencia = ref_nueva
+        pago.banco_origen = banco_nuevo
+        pago.banco_destino = banco_dest_nuevo
+        pago.monto = monto_nuevo
+        
+        db.commit()
+
+        # Mejoramos el detalle de la auditoría
+        detalles_audit = f"Re-escaneo IA. Ref: {ref_nueva}, Banco: {banco_nuevo}, Monto: {monto_nuevo}"
+
+        registrar_auditoria(
+            db, 
+            pago_id=pago.id, 
+            accion="reprocess", 
+            detalles=detalles_audit
+        )
+        return {"mensaje": "Pago reprocesado con éxito", "nuevos_datos": resultado}
+    except Exception as e:
+        logger.error(f"Error reprocesando: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- NUEVA RUTA PARA CAMBIAR ESTADO ---
+@app.patch("/pago/{pago_id}/estado")
+def cambiar_estado_pago(pago_id: int, update_data: EstadoUpdate, db: Session = Depends(get_db)):
+    """Actualiza el estado de un pago y registra en la auditoría."""
     pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
     if not pago:
         raise HTTPException(status_code=404, detail="Pago no encontrado")
 
-    old_values = {"referencia": pago.referencia, "banco_origen": pago.banco_origen, "monto": pago.monto}
-    updated = False
+    estado_anterior = pago.estado
+    nuevo_estado = update_data.estado.value
+    
+    if estado_anterior == nuevo_estado:
+        return {"mensaje": "El estado ya es el solicitado, no se realizaron cambios."}
 
-    if cambios.referencia is not None:
-        pago.referencia = cambios.referencia
-        updated = True
-    if cambios.banco_origen is not None:
-        pago.banco_origen = cambios.banco_origen
-        updated = True
-    if cambios.monto is not None:
-        pago.monto = cambios.monto
-        updated = True
+    pago.estado = nuevo_estado
+    
+    registrar_auditoria(
+        db,
+        pago_id=pago.id,
+        accion="update_status",
+        detalles=f"Estado cambiado de '{estado_anterior}' a '{nuevo_estado}'"
+    )
+    return {"mensaje": f"Estado del pago {pago_id} actualizado a '{nuevo_estado}'"}
 
-    if updated:
-        db.add(pago)
-        db.commit()
-        db.refresh(pago)
-        
-        # Historial de cambios
-        try:
-            detalles = {}
-            for k in ("referencia", "banco_origen", "monto"):
-                if old_values.get(k) != getattr(pago, k):
-                    detalles[k] = {"old": old_values.get(k), "new": getattr(pago, k)}
-            
-            if detalles:
-                hist = models.PagoHistory(pago_id=pago.id, accion="edit_id", detalles=json.dumps(detalles), usuario=None)
-                db.add(hist)
-                db.commit()
-        except Exception:
-            db.rollback()
-
-    return {"mensaje": "Pago actualizado exitosamente", "pago": {"id": pago.id, "referencia": pago.referencia, "banco_origen": pago.banco_origen, "monto": pago.monto}}
-
-
-@app.get("/_rutas_debug", include_in_schema=False)
-def rutas_debug():
-    """Endpoint temporal para listar rutas registradas y métodos.
-    Útil para depurar 404s por path o método incorrecto.
-    """
-    salida = []
-    for r in app.routes:
-        try:
-            methods = list(r.methods) if hasattr(r, "methods") and r.methods else []
-        except Exception:
-            methods = []
-        salida.append({"path": getattr(r, "path", str(r)), "methods": methods})
-    return salida
-
-
-@app.put("/editar-pago-ref/{referencia}")
-def editar_pago_por_referencia(referencia: str, cambios: PagoUpdate, db: Session = Depends(get_db), confirm: bool = False, x_api_key: Optional[str] = Header(None)):
-    """Editar un pago buscando por su `referencia` (insensible a mayúsculas).
-    No aplicará cambios automáticamente: si hay varias coincidencias devuelve la lista;
-    si hay una coincidencia, requiere `confirm=true` para aplicar los cambios.
-    """
-    # Validar API key si aplica
-    require_api_key(x_api_key)
-
-    matches = db.query(models.Pago).filter(models.Pago.referencia.ilike(f"%{referencia}%")).all()
-    if not matches:
-        raise HTTPException(status_code=404, detail="Pago no encontrado por referencia")
-
-    if len(matches) > 1:
-        # Devolver coincidencias para que el usuario elija
-        resumen = []
-        for p in matches:
-            resumen.append({"id": p.id, "referencia": p.referencia, "banco_origen": p.banco_origen, "monto": p.monto})
-        return {"mensaje": "Varios pagos coinciden, especifica el id para editar o afina la búsqueda", "coincidencias": resumen}
-
-    pago = matches[0]
-    if not confirm:
-        return {"mensaje": "Pago encontrado. Pasa query param `confirm=true` para aplicar cambios", "pago": {"id": pago.id, "referencia": pago.referencia, "banco_origen": pago.banco_origen, "monto": pago.monto}}
-
-    old_values = {"referencia": pago.referencia, "banco_origen": pago.banco_origen, "monto": pago.monto}
-    updated = False
-    if cambios.referencia is not None:
-        pago.referencia = cambios.referencia
-        updated = True
-    if cambios.banco_origen is not None:
-        pago.banco_origen = cambios.banco_origen
-        updated = True
-    if cambios.monto is not None:
-        pago.monto = cambios.monto
-        updated = True
-
-    if updated:
-        db.add(pago)
-        db.commit()
-        db.refresh(pago)
-        # Registrar historial
-        try:
-            detalles = {}
-            for k in ("referencia", "banco_origen", "monto"):
-                if old_values.get(k) != getattr(pago, k):
-                    detalles[k] = {"old": old_values.get(k), "new": getattr(pago, k)}
-            hist = models.PagoHistory(pago_id=pago.id, accion="edit", detalles=json.dumps(detalles), usuario=None)
-            db.add(hist)
-            db.commit()
-        except Exception:
-            db.rollback()
-
-    return {"mensaje": "Pago actualizado (por referencia)", "pago": {"id": pago.id, "referencia": pago.referencia, "banco_origen": pago.banco_origen, "monto": pago.monto}}
-
+@app.get("/pago/{pago_id}/historial")
+def obtener_historial(pago_id: int, db: Session = Depends(get_db)):
+    # Buscamos todos los registros de auditoría para ese pago
+    historial = db.query(models.PagoHistory).filter(
+        models.PagoHistory.pago_id == pago_id
+    ).order_by(desc(models.PagoHistory.id)).all()
+    return historial
 
 @app.delete("/eliminar-pago-ref/{referencia}")
-def eliminar_pago_por_referencia(referencia: str, db: Session = Depends(get_db), confirm: bool = False, x_api_key: Optional[str] = Header(None)):
-    """Eliminar un pago buscando por su `referencia` (insensible a mayúsculas).
-    No eliminará automáticamente si hay varias coincidencias; si hay una coincidencia
-    requiere `confirm=true` para proceder.
-    """
-    require_api_key(x_api_key)
+def eliminar_pago(referencia: str, confirm: bool = False, db: Session = Depends(get_db)):
+    pago = db.query(models.Pago).filter(models.Pago.referencia == referencia).first()
+    if not pago:
+        # Intentamos buscar por ID si la referencia parece un ID (fallback)
+        if referencia.isdigit():
+             pago = db.query(models.Pago).filter(models.Pago.id == int(referencia)).first()
+        
+        if not pago:
+            raise HTTPException(status_code=404, detail="Pago no encontrado")
 
-    matches = db.query(models.Pago).filter(models.Pago.referencia.ilike(f"%{referencia}%")).all()
-    if not matches:
-        raise HTTPException(status_code=404, detail="Pago no encontrado por referencia")
-
-    if len(matches) > 1:
-        resumen = []
-        for p in matches:
-            resumen.append({"id": p.id, "referencia": p.referencia, "banco_origen": p.banco_origen, "monto": p.monto})
-        return {"mensaje": "Varios pagos coinciden, especifica el id para eliminar o afina la búsqueda", "coincidencias": resumen}
-
-    pago = matches[0]
-    if not confirm:
-        return {"mensaje": "Pago encontrado. Pasa query param `confirm=true` para eliminar", "pago": {"id": pago.id, "referencia": pago.referencia, "banco_origen": pago.banco_origen, "monto": pago.monto}}
-
-    # registrar info antes de eliminar
-    try:
-        detalles = {"referencia": pago.referencia, "banco_origen": pago.banco_origen, "monto": pago.monto, "ruta_imagen": pago.ruta_imagen}
-        hist = models.PagoHistory(pago_id=pago.id, accion="delete", detalles=json.dumps(detalles), usuario=None)
-        db.add(hist)
-        db.commit()
-    except Exception:
-        db.rollback()
-
-    try:
+    if confirm:
+        # Borrar imagen física si existe
         if pago.ruta_imagen and os.path.exists(pago.ruta_imagen):
-            os.remove(pago.ruta_imagen)
-    except Exception:
-        pass
-
-    db.delete(pago)
-    db.commit()
-
-    return {"mensaje": "Pago eliminado (por referencia)", "id": pago.id}
-
-
-# Variantes con barra final (ocultas del esquema) para evitar 404 por diferencias de trailing slash
-@app.put("/editar-pago-ref/{referencia}/", include_in_schema=False)
-def editar_pago_por_referencia_slash(referencia: str, cambios: PagoUpdate, db: Session = Depends(get_db), confirm: bool = False, x_api_key: Optional[str] = Header(None)):
-    return editar_pago_por_referencia(referencia, cambios, db, confirm, x_api_key)
-
-
-@app.delete("/eliminar-pago-ref/{referencia}/", include_in_schema=False)
-def eliminar_pago_por_referencia_slash(referencia: str, db: Session = Depends(get_db), confirm: bool = False, x_api_key: Optional[str] = Header(None)):
-    return eliminar_pago_por_referencia(referencia, db, confirm, x_api_key)
+            try:
+                os.remove(pago.ruta_imagen)
+            except Exception as e:
+                logger.warning(f"No se pudo eliminar el archivo físico {pago.ruta_imagen}: {e}")
+        db.delete(pago)
+        db.commit()
+        return {"mensaje": "Eliminado correctamente"}
+    
+    return {"mensaje": "Se requiere confirmación (?confirm=true)"}

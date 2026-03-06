@@ -6,6 +6,14 @@ from .bnc import BncStrategy
 from .delsur import DelsurStrategy
 import cv2
 import numpy as np
+import re
+
+def limpiar_texto_identificacion(texto):
+    """Elimina frases que pueden confundir Banco Destino con Origen"""
+    t = texto.lower()
+    t = re.sub(r'banco\s*destino', ' ', t)
+    t = re.sub(r'destino\s*:', ' ', t)
+    return t
 
 def get_bank_strategy(texto_ocr, imagen=None):
     """
@@ -13,31 +21,29 @@ def get_bank_strategy(texto_ocr, imagen=None):
     Analiza texto (keywords, códigos) y visuales (color, fondo).
     """
     texto = texto_ocr.lower()
+    texto_limpio = limpiar_texto_identificacion(texto)
     
-    # Inicializar puntajes
+    # --- 1. Prioridad 1: Los 'Dueños' de la App (Marcas Únicas) ---
+    
+    # BNC
+    if "app bnc" in texto_limpio or "soluciones financieras" in texto_limpio:
+        return BncStrategy()
+        
+    # BBVA Provincial
+    if "dinero rápido" in texto_limpio or "bbva" in texto_limpio:
+        return BBVAStrategy()
+        
+    # Banco de Venezuela
+    if "pagomóvilbdv" in texto_limpio or "pagomovilbdv" in texto_limpio:
+        return VenezuelaStrategy()
+
+    # --- 2. Otros Bancos (Sin conflicto conocido, usamos lógica estándar o scores) ---
     scores = {
-        "BNC": 0,
-        "Venezuela": 0,
         "Delsur": 0,
         "Mercantil": 0,
-        "BBVA": 0,
-        "Banesco": 0,
         "BDT": 0
     }
 
-    # --- 1. Anclajes de Identidad (Texto) ---
-
-    # BNC (0191)
-    if "app bnc" in texto: scores["BNC"] += 2
-    if "soluciones financieras" in texto: scores["BNC"] += 2
-    if "0191" in texto: scores["BNC"] += 3  # Prioridad Código
-    if "bnc" in texto: scores["BNC"] += 1
-
-    # Venezuela (0102)
-    if "pagomóvilbdv" in texto or "pagomovilbdv" in texto: scores["Venezuela"] += 2
-    if "s.a.c.a. banco universal" in texto: scores["Venezuela"] += 2
-    if "0102" in texto: scores["Venezuela"] += 3  # Prioridad Código
-    if "transferencias a terceros" in texto: scores["Venezuela"] += 1
 
     # Delsur (0157)
     # Nota: Verificamos frase específica aunque esté en minúsculas por robustez OCR
@@ -50,9 +56,7 @@ def get_bank_strategy(texto_ocr, imagen=None):
     if "734" in texto: scores["Mercantil"] += 3
     if "mercantil" in texto: scores["Mercantil"] += 1
 
-    # Otros
-    if "dinero rápido" in texto or "bbva" in texto: scores["BBVA"] += 2
-    if "banesco" in texto: scores["Banesco"] += 2
+    # BDT
     if "bdt" in texto: scores["BDT"] += 2
 
     # --- 2. Reglas Especiales Visuales (Imagen) ---
@@ -66,13 +70,13 @@ def get_bank_strategy(texto_ocr, imagen=None):
             ratio_green = cv2.countNonZero(mask_green) / (imagen.shape[0] * imagen.shape[1])
             
             if ratio_green > 0.01: # Si >1% es verde
-                scores["BNC"] += 3
+                return BncStrategy()
 
             # Regla BDV: Fondo Oscuro (Header)
             # Analizar brillo promedio del tercio superior
             header = imagen[:int(imagen.shape[0]*0.3), :]
             if np.mean(header) < 100: # Umbral de oscuridad
-                scores["Venezuela"] += 3
+                pass # Ya cubierto por texto o muy genérico
         except Exception:
             pass
 
@@ -83,11 +87,11 @@ def get_bank_strategy(texto_ocr, imagen=None):
 
     if max_score >= 2:
         if best_bank == "Mercantil": return MercantilStrategy()
-        if best_bank == "Venezuela": return VenezuelaStrategy()
-        if best_bank == "BNC": return BncStrategy()
         if best_bank == "Delsur": return DelsurStrategy()
-        if best_bank == "BBVA": return BBVAStrategy()
-        if best_bank == "Banesco": return GenericStrategy("Banesco")
         if best_bank == "BDT": return GenericStrategy("BDT")
+        
+    # --- 3. Prioridad 2: Banesco (Último recurso) ---
+    if "banesco móvil" in texto_limpio or "banesco movil" in texto_limpio or "0134" in texto_limpio:
+        return GenericStrategy("Banesco")
     
     return GenericStrategy("Desconocido")

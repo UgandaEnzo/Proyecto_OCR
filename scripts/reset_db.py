@@ -7,7 +7,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-from database import SessionLocal
+from database import SessionLocal, engine
 import models
 
 def limpiar_uploads():
@@ -34,40 +34,24 @@ def limpiar_uploads():
         print(f"Error al leer carpeta uploads: {e}")
 
 def vaciar_base_datos():
-    db = SessionLocal()
     try:
-        print("Iniciando limpieza de base de datos...")
+        print("Iniciando REINICIO TOTAL de base de datos (DROP TABLES)...")
         
-        # 1. Eliminar historial primero (porque depende de pagos)
-        num_hist = db.query(models.PagoHistory).delete()
-        print(f"- Eliminados {num_hist} registros de historial.")
-
-        # 2. Eliminar pagos
-        num_pagos = db.query(models.Pago).delete()
-        print(f"- Eliminados {num_pagos} registros de pagos.")
-
-        # 3. Confirmar cambios
-        db.commit()
+        # 1. Eliminar tablas completas para actualizar esquema (columnas nuevas)
+        models.Base.metadata.drop_all(bind=engine)
+        print("- Tablas eliminadas.")
         
-        # Opcional: Intentar reiniciar los contadores de ID (Secuencias en PostgreSQL)
-        try:
-            db.execute(text("ALTER SEQUENCE pagos_id_seq RESTART WITH 1"))
-            db.execute(text("ALTER SEQUENCE pago_history_id_seq RESTART WITH 1"))
-            db.commit()
-            print("- Secuencias de ID reiniciadas a 1.")
-        except Exception:
-            print("- Nota: No se reiniciaron las secuencias (puede que los nombres difieran o no sea PostgreSQL).")
-
-        print("Base de datos vaciada exitosamente.")
+        # 2. Crear tablas de nuevo con la estructura nueva de models.py
+        models.Base.metadata.create_all(bind=engine)
+        print("- Tablas creadas nuevamente con estructura actualizada.")
         
-        # 4. Limpiar archivos físicos
+        # 3. Limpiar archivos físicos
         limpiar_uploads()
+        
+        print("Base de datos reiniciada exitosamente.")
 
     except Exception as e:
-        print(f"Error al vaciar la base de datos: {e}")
-        db.rollback()
-    finally:
-        db.close()
+        print(f"Error al reiniciar la base de datos: {e}")
 
 if __name__ == "__main__":
     confirm = input("ADVERTENCIA: Esto borrará TODOS los datos y las IMÁGENES asociadas. ¿Estás seguro? (escribe 'si'): ")
