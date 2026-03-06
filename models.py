@@ -25,7 +25,7 @@ class Pago(Base):
     monto = Column(Float)                   # Ej: 100.50
     fecha_registro = Column(DateTime(timezone=True), server_default=func.now())
     ruta_imagen = Column(String)            # Guardamos dónde quedó la foto
-    file_hash = Column(String, index=True, nullable=True)
+    file_hash = Column(String, index=True, unique=True, nullable=True)
     estado = Column(String, default="no_verificado", server_default="no_verificado", index=True)
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True)
     # Relación bidireccional: desde un pago se accede al cliente

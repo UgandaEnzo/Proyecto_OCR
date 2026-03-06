@@ -1,0 +1,12 @@
+2026-03-06 18:03:22,321 WARNING ocr_api - Advertencia: no se pudieron crear/verificar tablas en startup: (psycopg2.OperationalError) connection to server at "localhost" (::1), port 5432 failed: fe_sendauth: no password supplied
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-03-06 18:04:32,730 WARNING ocr_api - Advertencia: no se pudieron crear/verificar tablas en startup: (psycopg2.OperationalError) connection to server at "localhost" (::1), port 5432 failed: fe_sendauth: no password supplied
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-03-06 18:08:15,762 WARNING ocr_api - Advertencia: no se pudieron crear/verificar tablas en startup: (psycopg2.OperationalError) connection to server at "localhost" (::1), port 5432 failed: fe_sendauth: no password supplied
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-03-06 18:27:39,379 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas/creadas.
+2026-03-06 18:39:14,118 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas/creadas.
+2026-03-06 18:48:51,865 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas/creadas.

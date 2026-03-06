@@ -54,6 +54,17 @@ Este proyecto es una aplicación web construida con FastAPI para gestionar, veri
 
     # Clave de API para el servicio de Groq
     GROQ_API_KEY="gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+    # --- Variables Opcionales (con valores por defecto) ---
+    
+    # Nivel de logs: DEBUG, INFO, WARNING, ERROR
+    LOG_LEVEL=INFO
+
+    # Tamaño máximo de subida en MB
+    MAX_UPLOAD_MB=10
+
+    # Si se define, las rutas protegidas exigirán el header: x-api-key
+    # API_KEY="una-clave-secreta-muy-larga"
     ```
 
 ## Uso
@@ -62,7 +73,8 @@ Este proyecto es una aplicación web construida con FastAPI para gestionar, veri
     ```bash
     uvicorn main:app --reload
     ```
-    La aplicación estará disponible en `http://127.0.0.1:8000`.
+    -   El panel de control estará en `http://127.0.0.1:8000`.
+    -   La documentación de la API (Swagger) estará en `http://127.0.0.1:8000/api/docs`.
 
 2.  **Migraciones de Base de Datos (Alembic):**
     Cuando realices cambios en los `models.py`, necesitarás generar y aplicar una migración.
@@ -75,15 +87,16 @@ Este proyecto es una aplicación web construida con FastAPI para gestionar, veri
         ```bash
         alembic upgrade head
         ```
+    -   **Scripts de Mantenimiento**: En la carpeta `scripts/` encontrarás utilidades como `fill_file_hash.py` para poblar el hash de archivos en registros antiguos.
 
 ## Endpoints de la API
 
-La documentación interactiva de la API está disponible en `http://127.0.0.1:8000/docs`.
+La documentación interactiva de la API está disponible en `http://127.0.0.1:8000/api/docs`.
 
 -   `POST /subir-pago/`: Sube una imagen para procesar un pago.
 -   `POST /pago-manual/`: Registra un pago manualmente sin imagen.
 -   `GET /ver-pagos/`: Lista los pagos con paginación.
--   `GET /buscar-pagos/`: Busca pagos por un término de búsqueda.
+-   `GET /buscar-pagos/`: Busca pagos por número de referencia.
 -   `PATCH /pago/{pago_id}/estado`: Cambia el estado de un pago (`verificado`, `falso`, etc.).
 -   `POST /reprocesar/{pago_id}`: Vuelve a ejecutar el OCR en un pago existente.
 -   `POST /clientes/`: Crea un nuevo cliente.

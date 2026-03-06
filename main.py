@@ -1,9 +1,11 @@
 import os
 import shutil
 import uuid
-import json
 import logging
+from logging.handlers import RotatingFileHandler
 import hashlib
+import traceback
+import threading
 from enum import Enum
 from typing import Optional, List
 from dotenv import load_dotenv
@@ -12,27 +14,74 @@ from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Hea
 from fastapi.responses import JSONResponse, FileResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, exc as sa_exc
 from datetime import datetime
 from pydantic import BaseModel
 
 # Carga las variables de entorno desde un archivo .env ANTES de importar módulos locales
 load_dotenv()
 
-# Importamos tus módulos
-from database import engine, get_db
+# Importamos tus módulos (ahora database.py es más robusto)
+from database import engine, get_db, Base
 import models
 import ocr_engine  # Tu motor de OCR
 
-# Configuración de Logs (para ver errores en la consola negra)
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+def _setup_logging() -> logging.Logger:
+    """Configura un logger robusto que escribe en consola y en archivos rotativos."""
+    os.makedirs("logs", exist_ok=True)
+    logger = logging.getLogger("ocr_api")
+    if logger.handlers:
+        return logger
 
-# Crear tablas si no existen
-models.Base.metadata.create_all(bind=engine)
-logger.info("Sistema de Base de Datos inicializado: Tablas verificadas/creadas.")
+    logger.setLevel(os.getenv("LOG_LEVEL", "INFO").upper())
+    fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s - %(message)s")
 
-app = FastAPI()
+    file_handler = RotatingFileHandler(
+        os.path.join("logs", "app.log"),
+        maxBytes=2 * 1024 * 1024, # Archivos de 2MB
+        backupCount=5,
+        encoding="utf-8",
+    )
+    file_handler.setFormatter(fmt)
+    logger.addHandler(file_handler)
+
+    console = logging.StreamHandler()
+    console.setFormatter(fmt)
+    logger.addHandler(console)
+
+    return logger
+
+logger = _setup_logging()
+
+# --- MEJORA: Creación de tablas en segundo plano para no bloquear el inicio ---
+def _create_tables_bg():
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Sistema de Base de Datos inicializado: Tablas verificadas/creadas.")
+    except Exception as e:
+        logger.warning("Advertencia: no se pudieron crear/verificar tablas en startup: %s", e)
+
+threading.Thread(target=_create_tables_bg, daemon=True).start()
+
+# --- MEJORA: Mover la documentación de la API para liberar la raíz ---
+app = FastAPI(docs_url="/api/docs", redoc_url=None, openapi_url="/api/openapi.json")
+
+# --- MEJORA: Manejadores de errores de base de datos ---
+@app.exception_handler(sa_exc.OperationalError)
+def handle_db_operational_error(request, exc):
+    logger.critical("Error de conexión con la base de datos: %s", exc)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Base de datos no disponible. Revisa la configuración en tu .env."},
+    )
+
+@app.exception_handler(UnicodeDecodeError)
+def handle_db_unicode_decode_error(request, exc):
+    logger.critical("Error de codificación con la base de datos (común en Windows): %s", exc)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Error de codificación con la BD. Revisa credenciales y considera definir PGCLIENTENCODING en .env."},
+    )
 
 # Montar carpetas estáticas
 os.makedirs("uploads", exist_ok=True)
@@ -49,6 +98,19 @@ async def favicon():
         # Si no tienes un favicon, devuelve una respuesta vacía para evitar el error 404 en los logs.
         # El navegador no volverá a pedirlo en esta sesión.
         return Response(status_code=204)
+
+# --- MEJORA: Endpoint de Health Check ---
+@app.get("/healthz", include_in_schema=False)
+def healthz():
+    """Verifica que el servidor está en línea."""
+    return {"status": "ok"}
+
+# --- MEJORA: Función para requerir API Key opcional ---
+def require_api_key(x_api_key: Optional[str] = Header(None)):
+    configured_key = os.getenv("API_KEY")
+    if configured_key and (not x_api_key or x_api_key != configured_key):
+        raise HTTPException(status_code=401, detail="API key inválida o no proporcionada")
+    return True
 
 # --- MODELOS PYDANTIC (Para validar datos que entran) ---
 
@@ -196,44 +258,60 @@ async def subir_pago(
     file: UploadFile = File(...), 
     cliente_id: Optional[int] = Form(None),
     comentario: Optional[str] = Form(None),
-    x_api_key: Optional[str] = Header(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    # --- MEJORA: Seguridad con API Key ---
+    auth: bool = Depends(require_api_key)
 ):
+    # --- MEJORA: Endpoint mucho más robusto ---
+    filepath = None
     try:
-        # 1. Guardar archivo
-        file_ext = file.filename.split(".")[-1]
-        filename = f"{uuid.uuid4()}.{file_ext}"
+        # 1. Validaciones y guardado seguro
+        if not file.content_type or not file.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="Solo se permiten archivos de imagen.")
+
+        max_upload_mb = int(os.getenv("MAX_UPLOAD_MB", "10"))
+        max_bytes = max_upload_mb * 1024 * 1024
+
+        # Nombre de archivo sanitizado
+        filename = f"{uuid.uuid4().hex}_{os.path.basename(file.filename)}"
         filepath = os.path.join("uploads", filename)
-        
+
+        # Guardado en streaming con límite de tamaño
+        written_bytes = 0
         with open(filepath, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-            
-        # 2. Calcular Hash (SHA256 real)
+            while chunk := await file.read(1024 * 1024): # Leemos en bloques de 1MB
+                written_bytes += len(chunk)
+                if written_bytes > max_bytes:
+                    raise HTTPException(status_code=413, detail=f"Archivo demasiado grande (máx {max_upload_mb}MB)")
+                buffer.write(chunk)
+
+        # 2. Calcular Hash para anti-duplicados
         sha256_hash = hashlib.sha256()
         with open(filepath, "rb") as f:
             for byte_block in iter(lambda: f.read(4096), b""):
                 sha256_hash.update(byte_block)
         file_hash_str = sha256_hash.hexdigest()
 
-        # --- VALIDACIÓN ANTI-DUPLICADO POR HASH (IMAGEN EXACTA) ---
-        # Si subes exactamente el mismo archivo, lo bloqueamos antes de gastar recursos en OCR
-        if db.query(models.Pago).filter(models.Pago.file_hash == file_hash_str).first():
-            if os.path.exists(filepath):
-                os.remove(filepath)
+        # --- MEJORA: Validación anti-duplicado por HASH más informativa ---
+        existing_by_hash = db.query(models.Pago).filter(models.Pago.file_hash == file_hash_str).first()
+        if existing_by_hash:
             return JSONResponse(
-                content={"mensaje": "Error: Esta imagen ya fue procesada anteriormente (Duplicado exacto)."}, 
+                content={
+                    "mensaje": "Archivo duplicado detectado (hash). Ya existe un pago con este archivo.", 
+                    "id_existente": existing_by_hash.id, 
+                    "referencia": existing_by_hash.referencia
+                },
                 status_code=409
             )
 
         # 3. Procesar con OCR
         resultado = ocr_engine.procesar_imagen(filepath)
         
-        # Extraemos los datos clave para la validación
+        # 4. Validación anti-duplicado por lógica de negocio (se mantiene tu lógica)
         ref_ocr = resultado.get("referencia", "S/R")
         banco_origen = resultado.get("banco_origen") or resultado.get("banco", "Desconocido")
         monto_ocr = float(resultado.get("monto") or 0.0)
 
-        # --- VALIDACIÓN ANTI-DUPLICADO ---
         if ref_ocr not in ["S/R", "No detectada"]:
             pago_existente = db.query(models.Pago).filter(
                 models.Pago.referencia == ref_ocr,
@@ -241,15 +319,12 @@ async def subir_pago(
                 models.Pago.monto == monto_ocr
             ).first()
             if pago_existente:
-                # Si es duplicado, borramos la imagen física que acabamos de subir
-                if os.path.exists(filepath):
-                    os.remove(filepath)
                 return JSONResponse(
                     content={"mensaje": f"Error: Ya existe un pago con la misma referencia ({ref_ocr}), banco ({banco_origen}) y monto."}, 
                     status_code=409
                 )
 
-        # 4. Guardar en BD
+        # 5. Guardar en BD
         banco_destino = resultado.get("banco_destino") # Puede ser None
 
         nuevo_pago = models.Pago(
@@ -261,14 +336,30 @@ async def subir_pago(
             file_hash=file_hash_str,
             cliente_id=cliente_id
         )
-        db.add(nuevo_pago)
-        db.commit()
-        db.refresh(nuevo_pago)
+        
+        try:
+            db.add(nuevo_pago)
+            db.commit()
+            db.refresh(nuevo_pago)
+        except sa_exc.IntegrityError: # --- MEJORA: Manejo de carrera (dos uploads idénticos a la vez)
+            db.rollback()
+            existing = db.query(models.Pago).filter(models.Pago.file_hash == file_hash_str).first()
+            if existing:
+                return JSONResponse(
+                    content={
+                        "mensaje": "Archivo duplicado detectado (hash). Ya existe un pago con este archivo.",
+                        "id_existente": existing.id,
+                        "referencia": existing.referencia,
+                    },
+                    status_code=409
+                )
+            # Si no es por el hash, relanzamos el error
+            raise
 
-        # 5. Auditoría (PagoHistory)
+
+        # 6. Auditoría (PagoHistory) - Se mantiene tu lógica
         origen_datos = resultado.get("source", "RULES_LEGACY") # Default si no viene
         
-        # Preparamos detalles enriquecidos
         detalles_audit = f"Creado vía /subir-pago/. Motor: {origen_datos}. Ref: {ref_ocr}"
         if banco_destino:
              detalles_audit += f". Origen: {banco_origen} -> Destino: {banco_destino}"
@@ -282,9 +373,21 @@ async def subir_pago(
         
         return JSONResponse(content={"mensaje": "Procesado correctamente", "data": resultado}, status_code=200)
 
+    except HTTPException:
+        raise # Re-lanza las excepciones HTTP para que FastAPI las maneje
     except Exception as e:
-        logger.error(f"Error subiendo pago: {e}")
-        return JSONResponse(content={"detail": str(e)}, status_code=500)
+        # --- MEJORA: Logging de errores detallado sin exponerlo al cliente ---
+        tb = traceback.format_exc()
+        logger.error("Fallo crítico en /subir-pago/\n%s", tb)
+        try:
+            with open('logs/subir_trace.log', 'a', encoding='utf-8') as fh:
+                fh.write(f"--- {datetime.now()} ---\n{tb}\n")
+        except Exception as log_e:
+            logger.error("No se pudo escribir el log de trace: %s", log_e)
+        raise HTTPException(status_code=500, detail="Error interno del servidor al procesar el archivo.")
+    finally:
+        if filepath and os.path.exists(filepath) and 'nuevo_pago' not in locals():
+            os.remove(filepath)
 
 # --- 2. RUTA PARA REGISTRO MANUAL (Nueva) ---
 @app.post("/pago-manual/")

@@ -14,13 +14,13 @@ import hashlib
 import os
 import sys
 
-# Agregar el directorio raíz al path para poder importar database y models
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Añadir el directorio raíz del proyecto al path para poder importar 'database' y 'models'
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database import SessionLocal
 import models
 
-BATCH = 100
+BATCH_SIZE = 100
 
 def sha256(path):
     h = hashlib.sha256()
@@ -33,29 +33,30 @@ def sha256(path):
 def main():
     db = SessionLocal()
     try:
-        q = db.query(models.Pago).filter(models.Pago.file_hash == None).all()
-        total = len(q)
-        print(f"Registros sin file_hash: {total}")
-        i = 0
-        for p in q:
-            i += 1
-            if not p.ruta_imagen:
-                continue
-            if not os.path.exists(p.ruta_imagen):
-                print(f"[{i}/{total}] Archivo no existe: {p.ruta_imagen}")
-                continue
-            try:
-                h = sha256(p.ruta_imagen)
-                p.file_hash = h
-                db.add(p)
-                if i % BATCH == 0:
-                    db.commit()
-                    print(f"Guardados {i}/{total}")
-            except Exception as e:
-                print(f"[{i}/{total}] Error hashing {p.ruta_imagen}: {e}")
-                continue
-        db.commit()
-        print("Completado")
+        # Usamos un query que no carga todo en memoria de una vez
+        query = db.query(models.Pago).filter(models.Pago.file_hash == None)
+        total_to_process = query.count()
+        print(f"Registros sin file_hash encontrados: {total_to_process}")
+
+        if total_to_process == 0:
+            print("No hay registros que necesiten actualización.")
+            return
+
+        processed_count = 0
+        # Procesamos en lotes para ser eficientes con la memoria
+        for pago in query.yield_per(BATCH_SIZE):
+            if pago.ruta_imagen and os.path.exists(pago.ruta_imagen):
+                try:
+                    pago.file_hash = sha256(pago.ruta_imagen)
+                    processed_count += 1
+                    if processed_count % BATCH_SIZE == 0:
+                        db.commit()
+                        print(f"  ... {processed_count}/{total_to_process} registros procesados.")
+                except Exception as e:
+                    print(f"  [ERROR] No se pudo procesar el pago ID {pago.id} (imagen: {pago.ruta_imagen}): {e}")
+        
+        db.commit() # Guardar los registros restantes del último lote
+        print(f"Completado. Se actualizaron {processed_count} de {total_to_process} registros.")
     finally:
         db.close()
 
