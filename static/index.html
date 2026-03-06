@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pagos - Panel</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="/static/styles.css" rel="stylesheet">
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+</head>
+<body>
+  <nav class="navbar navbar-dark bg-primary">
+    <div class="container-fluid">
+      <span class="navbar-brand mb-0 h1">Sistema OCR - Pagos</span>
+      <div>
+        <button id="btnUpload" class="btn btn-outline-light btn-sm" data-bs-toggle="modal" data-bs-target="#uploadModal">Subir imagen</button>
+        <button class="btn btn-outline-light btn-sm ms-2" onclick="(window.app&&window.app.promptApiKey)?window.app.promptApiKey():prompt('Introduce API Key (usa la consola para guardar manualmente)')">API Key</button>
+      </div>
+    </div>
+  </nav>
+
+  <div id="app" class="app-container">
+    <aside class="sidebar">
+      <div class="p-3">
+        <h5>Controles</h5>
+        <div class="mb-2">
+          <input v-model="q" @keyup.enter="buscar" class="form-control" placeholder="Buscar (últimos 4 dígitos)" />
+        </div>
+        <div class="d-grid gap-2">
+          <button class="btn btn-primary" @click="buscar">Buscar</button>
+          <button class="btn btn-secondary" @click="cargar(0)">Recargar</button>
+        </div>
+        <hr />
+        <div>
+          <small class="text-muted">Página {{page+1}} / {{totalPages}}</small>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="container-fluid p-3">
+        <div class="table-responsive">
+          <table class="table table-hover table-sm">
+            <thead class="table-light">
+              <tr>
+                <th>ID</th>
+                <th>Referencia</th>
+                <th>Banco</th>
+                <th>Monto</th>
+                <th>Imagen</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="p in pagos" :key="p.id">
+                <td>{{p.id}}</td>
+                <td>{{p.referencia}}</td>
+                <td>{{p.banco_origen}}</td>
+                <td>{{formatMonto(p.monto)}}</td>
+                <td>
+                  <img v-if="p.ruta_imagen" :src="getUploadUrl(p.ruta_imagen)" class="thumb" />
+                </td>
+                <td class="text-end">
+                  <button class="btn btn-sm btn-outline-primary me-1" @click="openEditar(p)">Editar</button>
+                  <button class="btn btn-sm btn-outline-danger" @click="confirmEliminar(p)">Eliminar</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <nav class="mt-2">
+          <ul class="pagination">
+            <li class="page-item" :class="{disabled: page==0}"><a class="page-link" href="#" @click.prevent="cargar(page-1)">Anterior</a></li>
+            <li class="page-item disabled"><span class="page-link">{{page+1}}</span></li>
+            <li class="page-item" :class="{disabled: page+1>= totalPages}"><a class="page-link" href="#" @click.prevent="cargar(page+1)">Siguiente</a></li>
+          </ul>
+        </nav>
+      </div>
+    </main>
+  </div>
+
+  <!-- Upload Modal -->
+  <div class="modal fade" id="uploadModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Subir imagen para OCR</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="uploadForm">
+            <div class="mb-3">
+              <label class="form-label">Imagen</label>
+              <input type="file" name="file" accept="image/*" class="form-control" required />
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Comentario (opcional)</label>
+              <input type="text" name="comentario" class="form-control" />
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+          <button id="uploadSubmit" type="button" class="btn btn-primary">Subir</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Modal -->
+  <div class="modal fade" id="editarModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">Editar pago</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+          <div class="mb-2">
+            <label class="form-label">Referencia</label>
+            <input v-model="editItem.referencia" class="form-control" />
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Banco</label>
+            <input v-model="editItem.banco_origen" class="form-control" />
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Monto</label>
+            <input v-model.number="editItem.monto" type="number" step="0.01" class="form-control" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+          <button type="button" class="btn btn-primary" @click="guardarEdicion">Guardar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // Expose app reference after mount so navbar button can call promptApiKey
+    (function(){
+      const origCreate = Vue.createApp
+      Vue.createApp = function(){
+        const app = origCreate.apply(this, arguments)
+        const origMount = app.mount
+        app.mount = function(el){
+          const vm = origMount.call(this, el)
+          window.app = vm
+          return vm
+        }
+        return app
+      }
+    })();
+  </script>
+  <script type="module" src="/static/app.js"></script>
+  <!-- Toast container -->
+  <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1080;">
+    <div id="toastContainer"></div>
+  </div>
+</body>
+</html>

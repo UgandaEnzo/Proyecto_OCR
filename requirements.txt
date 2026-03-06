@@ -1,0 +1,13 @@
+fastapi
+pydantic
+uvicorn
+sqlalchemy
+psycopg2-binary
+pytesseract
+opencv-python
+python-multipart
+Pillow
+numpy
+aiofiles
+alembic
+requests
