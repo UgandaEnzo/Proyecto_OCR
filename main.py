@@ -1,15 +1,24 @@
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Header
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import exc as sa_exc
-import shutil
 import os
 import uuid
 import json
 import hashlib
+import logging
+from logging.handlers import RotatingFileHandler
+
+# Cargar variables desde .env si existe (sin requerirlo estrictamente)
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except Exception:
+    pass
 
 # Importamos nuestros módulos
 from database import engine, Base, get_db
@@ -17,13 +26,69 @@ import models
 import threading
 
 # Instancia de la app
-app = FastAPI()
+# Documentación movida a /api/docs para que la raíz muestre el panel estático por defecto
+app = FastAPI(docs_url="/api/docs", redoc_url=None, openapi_url="/api/openapi.json")
+
+
+def _setup_logging() -> logging.Logger:
+    os.makedirs("logs", exist_ok=True)
+    logger = logging.getLogger("ocr_api")
+    if logger.handlers:
+        return logger
+
+    logger.setLevel(os.getenv("LOG_LEVEL", "INFO").upper())
+    fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s - %(message)s")
+
+    file_handler = RotatingFileHandler(
+        os.path.join("logs", "app.log"),
+        maxBytes=2 * 1024 * 1024,
+        backupCount=5,
+        encoding="utf-8",
+    )
+    file_handler.setFormatter(fmt)
+    logger.addHandler(file_handler)
+
+    console = logging.StreamHandler()
+    console.setFormatter(fmt)
+    logger.addHandler(console)
+
+    return logger
+
+
+logger = _setup_logging()
+
+
+@app.exception_handler(sa_exc.OperationalError)
+def handle_db_operational_error(request, exc):
+    # No incluir detalles del error (puede contener host/usuario).
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": "Base de datos no disponible. Configura DATABASE_URL o DB_USER/DB_PASS/DB_HOST/DB_NAME y reinicia el servidor.",
+        },
+    )
+
+
+@app.exception_handler(UnicodeDecodeError)
+def handle_db_unicode_decode_error(request, exc):
+    # Suele ocurrir en Windows cuando Postgres devuelve mensajes en WIN1252/LATIN1.
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": "Base de datos no disponible (error de codificación). Revisa credenciales y, si estás en Windows, prueba definir PGCLIENTENCODING=WIN1252 o LATIN1 en el .env y reinicia el servidor.",
+        },
+    )
 
 # Montar static y garantizar carpeta uploads
 if not os.path.exists("uploads"):
     os.makedirs("uploads", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok"}
 
 
 # Función simple para validar API key opcional
@@ -39,7 +104,7 @@ def _create_tables_bg():
     try:
         models.Base.metadata.create_all(bind=engine)
     except Exception as e:
-        print(f"Advertencia: no se pudieron crear tablas en startup: {e}")
+        logger.warning("Advertencia: no se pudieron crear tablas en startup: %s", e)
     # no devolvemos nada; la creación de tablas fue intentada en background
 
 
@@ -55,11 +120,36 @@ def subir_pago(file: UploadFile = File(...), db: Session = Depends(get_db), x_ap
     require_api_key(x_api_key)
     import traceback
     try:
+        # Validación básica del tipo de archivo
+        if not file.content_type or not file.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="Solo se permiten archivos de imagen")
+
+        # Límite máximo de subida (bytes). Por defecto: 10MB
+        max_upload_mb = int(os.getenv("MAX_UPLOAD_MB", "10"))
+        max_bytes = max_upload_mb * 1024 * 1024
+
         filename = f"{uuid.uuid4().hex}_{os.path.basename(file.filename)}"
         file_path = f"uploads/{filename}"
 
+        # Guardar en disco con límite de tamaño
+        written = 0
         with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            while True:
+                chunk = file.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > max_bytes:
+                    try:
+                        buffer.close()
+                    except Exception:
+                        pass
+                    try:
+                        os.remove(file_path)
+                    except Exception:
+                        pass
+                    raise HTTPException(status_code=413, detail=f"Archivo demasiado grande (máx {max_upload_mb}MB)")
+                buffer.write(chunk)
 
         # Calcular hash SHA256 del archivo subido para detectar duplicados
         def _sha256(path):
@@ -87,67 +177,68 @@ def subir_pago(file: UploadFile = File(...), db: Session = Depends(get_db), x_ap
                         pass
                     return {"mensaje": "Archivo duplicado detectado (hash). Ya existe un pago con este archivo.", "id_existente": existing.id, "referencia": existing.referencia}
 
-                # Si no hay match por hash en DB, comprobamos contra archivos guardados (registros antiguos)
-                # ADVERTENCIA: Esto es costoso (O(N)). Idealmente, ejecutar un script de migración para calcular hashes de todos los archivos antiguos
-                # y guardarlos en DB, para eliminar este bloque 'else' en el futuro.
-                all_pagos = db.query(models.Pago).filter(models.Pago.ruta_imagen.isnot(None)).all()
-                for p in all_pagos:
-                    try:
-                        if not p.ruta_imagen:
-                            continue
-                        if not os.path.exists(p.ruta_imagen):
-                            continue
-                        if new_size is not None and os.path.getsize(p.ruta_imagen) != new_size:
-                            continue
-                        if _sha256(p.ruta_imagen) == new_hash:
-                            try:
-                                import ocr_engine
-                                resultado_dup = ocr_engine.procesar_imagen(file_path)
-                            except Exception:
-                                resultado_dup = {}
+                # Escaneo legacy de archivos (O(N)) deshabilitado por defecto.
+                # Si necesitas compatibilidad con registros antiguos sin `file_hash`, activa:
+                #   ENABLE_LEGACY_FILE_SCAN_DUP_CHECK=1
+                if os.getenv("ENABLE_LEGACY_FILE_SCAN_DUP_CHECK", "0") == "1":
+                    all_pagos = db.query(models.Pago).filter(models.Pago.ruta_imagen.isnot(None)).all()
+                    for p in all_pagos:
+                        try:
+                            if not p.ruta_imagen:
+                                continue
+                            if not os.path.exists(p.ruta_imagen):
+                                continue
+                            if new_size is not None and os.path.getsize(p.ruta_imagen) != new_size:
+                                continue
+                            if _sha256(p.ruta_imagen) == new_hash:
+                                try:
+                                    import ocr_engine
+                                    resultado_dup = ocr_engine.procesar_imagen(file_path)
+                                except Exception:
+                                    resultado_dup = {}
 
-                            detalles = {}
-                            updated = False
-                            try:
-                                if resultado_dup.get('referencia') and resultado_dup.get('referencia') != p.referencia:
-                                    detalles['referencia'] = {'old': p.referencia, 'new': resultado_dup.get('referencia')}
-                                    p.referencia = resultado_dup.get('referencia')
-                                    updated = True
-                                if resultado_dup.get('banco') and resultado_dup.get('banco') != p.banco_origen:
-                                    detalles['banco_origen'] = {'old': p.banco_origen, 'new': resultado_dup.get('banco')}
-                                    p.banco_origen = resultado_dup.get('banco')
-                                    updated = True
-                                if resultado_dup.get('monto') is not None and resultado_dup.get('monto') != p.monto:
-                                    detalles['monto'] = {'old': p.monto, 'new': resultado_dup.get('monto')}
-                                    p.monto = resultado_dup.get('monto')
-                                    updated = True
+                                detalles = {}
+                                updated = False
+                                try:
+                                    if resultado_dup.get('referencia') and resultado_dup.get('referencia') != p.referencia:
+                                        detalles['referencia'] = {'old': p.referencia, 'new': resultado_dup.get('referencia')}
+                                        p.referencia = resultado_dup.get('referencia')
+                                        updated = True
+                                    if resultado_dup.get('banco') and resultado_dup.get('banco') != p.banco_origen:
+                                        detalles['banco_origen'] = {'old': p.banco_origen, 'new': resultado_dup.get('banco')}
+                                        p.banco_origen = resultado_dup.get('banco')
+                                        updated = True
+                                    if resultado_dup.get('monto') is not None and resultado_dup.get('monto') != p.monto:
+                                        detalles['monto'] = {'old': p.monto, 'new': resultado_dup.get('monto')}
+                                        p.monto = resultado_dup.get('monto')
+                                        updated = True
 
-                                if not p.file_hash and new_hash:
-                                    p.file_hash = new_hash
-                                    detalles['file_hash'] = {'old': None, 'new': new_hash}
-                                    updated = True
+                                    if not p.file_hash and new_hash:
+                                        p.file_hash = new_hash
+                                        detalles['file_hash'] = {'old': None, 'new': new_hash}
+                                        updated = True
 
-                                if updated:
-                                    db.add(p)
-                                    db.commit()
-                                    db.refresh(p)
-                                    try:
-                                        hist = models.PagoHistory(pago_id=p.id, accion="merge", detalles=json.dumps(detalles), usuario=None)
-                                        db.add(hist)
+                                    if updated:
+                                        db.add(p)
                                         db.commit()
-                                    except Exception:
-                                        db.rollback()
-                            except Exception:
-                                db.rollback()
+                                        db.refresh(p)
+                                        try:
+                                            hist = models.PagoHistory(pago_id=p.id, accion="merge", detalles=json.dumps(detalles), usuario=None)
+                                            db.add(hist)
+                                            db.commit()
+                                        except Exception:
+                                            db.rollback()
+                                except Exception:
+                                    db.rollback()
 
-                            try:
-                                os.remove(file_path)
-                            except Exception:
-                                pass
+                                try:
+                                    os.remove(file_path)
+                                except Exception:
+                                    pass
 
-                            return {"mensaje": "Archivo duplicado detectado. Registro existente actualizado" if updated else "Archivo duplicado detectado. No se realizaron cambios", "id_existente": p.id, "referencia": p.referencia}
-                    except Exception:
-                        continue
+                                return {"mensaje": "Archivo duplicado detectado. Registro existente actualizado" if updated else "Archivo duplicado detectado. No se realizaron cambios", "id_existente": p.id, "referencia": p.referencia}
+                        except Exception:
+                            continue
             except Exception:
                 # si falla la comprobación de duplicados, continuamos normalmente
                 pass
@@ -157,7 +248,7 @@ def subir_pago(file: UploadFile = File(...), db: Session = Depends(get_db), x_ap
             import ocr_engine
             resultado = ocr_engine.procesar_imagen(file_path)
         except Exception as e:
-            print(f"Error crítico en OCR: {e}")
+            logger.exception("Error crítico en OCR")
             resultado = {
                 "referencia": "Error OCR",
                 "banco": "Desconocido",
@@ -183,6 +274,32 @@ def subir_pago(file: UploadFile = File(...), db: Session = Depends(get_db), x_ap
             db.add(nuevo_pago)
             db.commit()
             db.refresh(nuevo_pago)
+        except sa_exc.IntegrityError:
+            # Si existe índice único por `file_hash`, manejamos duplicados concurrentes.
+            db.rollback()
+            if new_hash:
+                try:
+                    existing = db.query(models.Pago).filter(models.Pago.file_hash == new_hash).first()
+                except Exception:
+                    existing = None
+                if existing:
+                    try:
+                        os.remove(file_path)
+                    except Exception:
+                        pass
+                    return {
+                        "mensaje": "Archivo duplicado detectado (hash). Ya existe un pago con este archivo.",
+                        "id_existente": existing.id,
+                        "referencia": existing.referencia,
+                    }
+            raise
+        except sa_exc.OperationalError:
+            db.rollback()
+            # Error típico: credenciales/BD no configuradas o Postgres apagado
+            raise HTTPException(
+                status_code=503,
+                detail="Base de datos no disponible. Configura DATABASE_URL o DB_USER/DB_PASS/DB_HOST/DB_NAME y reinicia el servidor.",
+            )
         except sa_exc.ProgrammingError:
             # Posible esquema antiguo sin columna `file_hash`.
             db.rollback()
@@ -212,15 +329,37 @@ def subir_pago(file: UploadFile = File(...), db: Session = Depends(get_db), x_ap
             "datos_extraidos": resultado,
             "id_registro": nuevo_pago.id,
         }
+    except HTTPException:
+        raise
     except Exception:
         tb = traceback.format_exc()
+        logger.error("Fallo en /subir-pago/\n%s", tb)
         try:
             os.makedirs('logs', exist_ok=True)
             with open('logs/subir_trace.log', 'a', encoding='utf-8') as fh:
                 fh.write(tb + "\n---\n")
         except Exception:
             pass
-        return {"error": "Internal Server Error", "trace": tb}
+        # No exponer trazas al cliente
+        return {"error": "Internal Server Error"}
+
+
+# Redirecciones útiles para la UI del frontend
+@app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
+def root_redirect():
+    """Redirige a la interfaz web estática."""
+    return RedirectResponse(url="/static/index.html")
+
+
+@app.api_route("/panel", methods=["GET", "HEAD"])
+def panel_redirect():
+    """Endpoint visible en la documentación que abre la vista del panel web."""
+    return RedirectResponse(url="/static/index.html")
+
+
+@app.api_route("/panel/", methods=["GET", "HEAD"], include_in_schema=False)
+def panel_redirect_slash():
+    return RedirectResponse(url="/static/index.html")
 
 
 @app.get("/ver-pagos/")

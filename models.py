@@ -11,7 +11,7 @@ class Pago(Base):
     monto = Column(Float)                   # Ej: 100.50
     fecha_registro = Column(DateTime(timezone=True), server_default=func.now())
     ruta_imagen = Column(String)            # Guardamos dónde quedó la foto
-    file_hash = Column(String, index=True, nullable=True)
+    file_hash = Column(String, index=True, unique=True, nullable=True)
 
 
 class PagoHistory(Base):
