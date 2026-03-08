@@ -57,6 +57,11 @@ Este proyecto es una aplicación web construida con FastAPI para gestionar, veri
 
     # --- Variables Opcionales (con valores por defecto) ---
     
+    # Ruta al ejecutable de Tesseract-OCR (si no está en el PATH del sistema).
+    # Descomenta y ajusta la línea si es necesario.
+    # En Windows, usa dobles barras invertidas.
+    # TESSERACT_CMD="C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
+
     # Nivel de logs: DEBUG, INFO, WARNING, ERROR
     LOG_LEVEL=INFO
 
@@ -75,6 +80,43 @@ Este proyecto es una aplicación web construida con FastAPI para gestionar, veri
     ```
     -   El panel de control estará en `http://127.0.0.1:8000`.
     -   La documentación de la API (Swagger) estará en `http://127.0.0.1:8000/api/docs`.
+
+## Crear un Ejecutable (.exe)
+
+Puedes empaquetar esta aplicación en un único archivo ejecutable para distribuirla y ejecutarla en otras máquinas Windows sin necesidad de instalar Python o un entorno virtual. Para esto, usaremos `PyInstaller`.
+
+**Importante:** El ejecutable seguirá necesitando dos cosas en la máquina de destino:
+1.  **Conexión a la base de datos PostgreSQL.** El `.env` junto al `.exe` debe apuntar a ella.
+2.  **Tesseract-OCR instalado.** Deberás instalarlo y asegurarte de que su ruta esté en el `PATH` del sistema o configurarla en la variable `TESSERACT_CMD` del archivo `.env`.
+
+**Pasos:**
+
+1.  **Instalar PyInstaller en tu entorno virtual:**
+    ```bash
+    pip install pyinstaller
+    ```
+
+2.  **Crear un script de entrada:**
+    PyInstaller no puede ejecutar directamente el comando `uvicorn`. Crea un archivo llamado `run.py` en la raíz del proyecto con el siguiente contenido:
+
+    ```python
+    import uvicorn
+
+    if __name__ == "__main__":
+        from main import app
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+    ```
+
+3.  **Ejecutar PyInstaller:**
+    Desde la terminal, en la raíz del proyecto, ejecuta el siguiente comando. Este le indica a PyInstaller que cree un solo archivo (`--onefile`), le dé un nombre (`--name`), y que incluya las carpetas y archivos necesarios (`--add-data`).
+
+    ```bash
+    # En Windows (usa ; como separador para --add-data)
+    pyinstaller --name "OcrApp" --onefile --add-data "static;static" --add-data "skills;skills" --add-data ".env;." run.py
+    ```
+
+4.  **Encontrar el ejecutable:**
+    Una vez que el proceso termine, encontrarás `OcrApp.exe` dentro de una nueva carpeta llamada `dist`. Puedes copiar este archivo a otra máquina, colocar un archivo `.env` configurado a su lado, y ejecutarlo. La carpeta `uploads/` se creará automáticamente al primer uso.
 
 2.  **Migraciones de Base de Datos (Alembic):**
     Cuando realices cambios en los `models.py`, necesitarás generar y aplicar una migración.

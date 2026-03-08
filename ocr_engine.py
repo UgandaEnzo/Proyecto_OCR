@@ -8,15 +8,14 @@ import unicodedata
 import os
 import bank_rules
 from skill_engine import SkillEngine
-
-# IMPORTANTE: Configura la ruta donde instalaste Tesseract en Windows
-# Se busca en variable de entorno, luego en ruta por defecto de Windows, o se asume en PATH
-DEFAULT_TESSERACT_PATH = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-tesseract_cmd = os.getenv("TESSERACT_CMD", DEFAULT_TESSERACT_PATH)
-
-if os.path.exists(tesseract_cmd):
+ 
+# --- Configuración de Tesseract ---
+# Busca la ruta del ejecutable de Tesseract en la variable de entorno TESSERACT_CMD.
+# Si la variable está definida y la ruta es válida, se usa.
+# Si no, se asume que 'tesseract' está en el PATH del sistema.
+tesseract_cmd = os.getenv("TESSERACT_CMD")
+if tesseract_cmd and os.path.exists(tesseract_cmd):
     pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
-# Si no existe la ruta específica, confiamos en que 'tesseract' esté en el PATH del sistema
 
 # Instancia global del motor de skills
 skill_engine = SkillEngine()
