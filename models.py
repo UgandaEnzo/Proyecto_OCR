@@ -23,6 +23,8 @@ class Pago(Base):
     banco_origen = Column(String)           # Ej: Banco Venezuela
     banco_destino = Column(String, nullable=True) # Ej: Banesco
     monto = Column(Float)                   # Ej: 100.50
+    monto_usd = Column(Float, nullable=True, default=0.0)
+    tasa_cambio = Column(Float, nullable=True, default=1.0)
     fecha_registro = Column(DateTime(timezone=True), server_default=func.now())
     ruta_imagen = Column(String)            # Guardamos dónde quedó la foto
     file_hash = Column(String, index=True, unique=True, nullable=True)
@@ -41,3 +43,12 @@ class PagoHistory(Base):
     detalles = Column(String)  # JSON pequeño con cambios o razón
     usuario = Column(String, nullable=True)
     fecha = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class TasaCambio(Base):
+    __tablename__ = "tasas_cambio"
+
+    id = Column(Integer, primary_key=True, index=True)
+    proveedor = Column(String, default="BCV")
+    monto_tasa = Column(Float, nullable=False)
+    fecha_actualizacion = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

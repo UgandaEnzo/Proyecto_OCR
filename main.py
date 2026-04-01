@@ -9,6 +9,8 @@ import threading
 from enum import Enum
 from typing import Optional, List
 from dotenv import load_dotenv
+from contextlib import asynccontextmanager
+import requests
 
 from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Header, Body
 from fastapi.responses import JSONResponse, FileResponse, Response, RedirectResponse
@@ -17,6 +19,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, exc as sa_exc
 from datetime import datetime
 from pydantic import BaseModel
+
+from exchange import get_tasa_bcv, convertir_payments, TasaNoDisponibleError
 
 # Carga las variables de entorno desde un archivo .env ANTES de importar módulos locales
 load_dotenv()
@@ -53,18 +57,24 @@ def _setup_logging() -> logging.Logger:
 
 logger = _setup_logging()
 
-# --- MEJORA: Creación de tablas en segundo plano para no bloquear el inicio ---
-def _create_tables_bg():
+# --- MEJORA: Uso de Lifespan para inicialización limpia ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Maneja el inicio y cierre de la aplicación de forma segura."""
     try:
         Base.metadata.create_all(bind=engine)
-        logger.info("Sistema de Base de Datos inicializado: Tablas verificadas/creadas.")
+        logger.info("Sistema de Base de Datos inicializado: Tablas verificadas.")
     except Exception as e:
-        logger.warning("Advertencia: no se pudieron crear/verificar tablas en startup: %s", e)
-
-threading.Thread(target=_create_tables_bg, daemon=True).start()
+        logger.error("❌ Error crítico al inicializar la base de datos: %s", e)
+    yield
 
 # --- MEJORA: Mover la documentación de la API para liberar la raíz ---
-app = FastAPI(docs_url="/api/docs", redoc_url=None, openapi_url="/api/openapi.json")
+app = FastAPI(
+    docs_url="/api/docs", 
+    redoc_url=None, 
+    openapi_url="/api/openapi.json",
+    lifespan=lifespan
+)
 
 # --- MEJORA: Manejadores de errores de base de datos ---
 @app.exception_handler(sa_exc.OperationalError)
@@ -139,6 +149,8 @@ class PagoParaCliente(BaseModel):
     id: int
     referencia: str
     monto: float
+    monto_usd: Optional[float] = None
+    tasa_cambio: Optional[float] = None
     fecha_registro: datetime
     estado: str
 
@@ -156,6 +168,20 @@ class PagoManual(BaseModel):
     monto: float
     cliente_id: Optional[int] = None
 
+class ConversionRequest(BaseModel):
+    monto_bs: float
+
+class ConversionResponse(BaseModel):
+    monto_bs: float
+    tasa_bcv: float
+    fecha_consulta: datetime
+    monto_usd: float
+    origen: str
+    es_fallback: bool = False
+
+class TasaBCVUpdate(BaseModel):
+    tasa_bcv: float
+
 # --- FUNCIONES AUXILIARES ---
 def registrar_auditoria(db: Session, pago_id: int, accion: str, detalles: str):
     """Función para ahorrar trabajo: registra movimientos en el historial"""
@@ -168,17 +194,74 @@ def registrar_auditoria(db: Session, pago_id: int, accion: str, detalles: str):
     db.add(nuevo_historial)
     db.commit()
 
+def obtener_tasa_bcv_con_fallback(db: Session):
+    """Wrapper legado para compatibilidad. Usa la función moderna de exchange."""
+    import asyncio
+    tasa_info = asyncio.get_event_loop().run_until_complete(get_tasa_bcv(db))
+    return float(tasa_info["tasa"]), tasa_info["fecha"], tasa_info["origen"]
+
+    # 1) Intentar tasa guardada en BD.
+    tasa_db = db.query(models.TasaCambio).filter(models.TasaCambio.proveedor == "BCV").order_by(models.TasaCambio.fecha_actualizacion.desc()).first()
+    if tasa_db and tasa_db.monto_tasa and tasa_db.monto_tasa > 0:
+        es_fallback = True
+        return tasa_db.monto_tasa, tasa_db.fecha_actualizacion or datetime.now(), es_fallback
+
+    # 2) Intentar API externa.
+    tasa_api_url = os.getenv("TASA_BCV_API_URL", "https://s3.amazonaws.com/dolartoday/data.json")
+    if tasa_api_url:
+        try:
+            r = requests.get(tasa_api_url, timeout=8)
+            r.raise_for_status()
+            data = r.json()
+
+            tasa_valor = None
+            if isinstance(data, dict):
+                if "USD" in data and isinstance(data["USD"], dict):
+                    tasa_valor = float(data["USD"].get("dolartoday", {}).get("promedio", 0.0) or 0.0)
+                elif "venta" in data and "compra" in data:
+                    tasa_valor = float(data.get("venta", 0.0) or 0.0)
+                elif "rates" in data and isinstance(data["rates"], dict):
+                    v = float(data["rates"].get("VES", 0.0) or 0.0)
+                    if v > 0:
+                        tasa_valor = 1.0 / v
+
+            if tasa_valor and tasa_valor > 0:
+                tasa = tasa_valor
+                tasa_db = db.query(models.TasaCambio).filter(models.TasaCambio.proveedor == "BCV").first()
+                if not tasa_db:
+                    tasa_db = models.TasaCambio(proveedor="BCV", monto_tasa=tasa)
+                    db.add(tasa_db)
+                else:
+                    tasa_db.monto_tasa = tasa
+                    tasa_db.fecha_actualizacion = func.now()
+                db.commit()
+                es_fallback = True
+                return tasa, datetime.now(), es_fallback
+
+        except Exception as e:
+            logger.warning(f"No se pudo obtener la tasa desde API externa {tasa_api_url}: {e}")
+
+    # 3) Fallback env var.
+    tasa_env = float(os.getenv("DEFAULT_TASA_BCV", "1.0"))
+    if tasa_env and tasa_env > 0:
+        es_fallback = True
+        return tasa_env, datetime.now(), es_fallback
+
+    # 4) Fallback seguro.
+    es_fallback = True
+    return 1.0, datetime.now(), es_fallback
+
 # --- RUTAS ---
 
 # Redirecciones útiles para la UI del frontend
 @app.get("/", include_in_schema=False)
-def root_redirect():
+async def root_redirect():
     """Redirige a la interfaz web estática."""
     return RedirectResponse(url="/static/index.html")
 
 
 @app.get("/panel")
-def panel_redirect():
+async def panel_redirect():
     """Endpoint visible en la documentación que abre la vista del panel web."""
     return RedirectResponse(url="/static/index.html")
 
@@ -199,9 +282,40 @@ def crear_cliente(cliente: ClienteBase, db: Session = Depends(get_db)):
     return nuevo_cliente
 
 @app.get("/clientes/", response_model=List[Cliente])
-def leer_clientes(db: Session = Depends(get_db)):
-    """Obtiene una lista de todos los clientes."""
-    return db.query(models.Cliente).all()
+def leer_clientes(q: Optional[str] = None, db: Session = Depends(get_db)):
+    """Obtiene una lista de todos los clientes, opcionalmente filtrada."""
+    query = db.query(models.Cliente)
+    if q:
+        query = query.filter(
+            (models.Cliente.nombre.ilike(f"%{q}%")) | 
+            (models.Cliente.cedula.ilike(f"%{q}%")) |
+            (models.Cliente.telefono.ilike(f"%{q}%"))
+        )
+    return query.all()
+
+@app.put("/clientes/{cliente_id}", response_model=Cliente)
+def actualizar_cliente(cliente_id: int, cliente_data: ClienteBase, db: Session = Depends(get_db)):
+    db_cliente = db.query(models.Cliente).filter(models.Cliente.id == cliente_id).first()
+    if not db_cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    
+    db_cliente.nombre = cliente_data.nombre
+    db_cliente.cedula = cliente_data.cedula
+    db_cliente.telefono = cliente_data.telefono
+    
+    db.commit()
+    db.refresh(db_cliente)
+    return db_cliente
+
+@app.delete("/clientes/{cliente_id}")
+def eliminar_cliente(cliente_id: int, db: Session = Depends(get_db)):
+    db_cliente = db.query(models.Cliente).filter(models.Cliente.id == cliente_id).first()
+    if not db_cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    
+    db.delete(db_cliente)
+    db.commit()
+    return {"mensaje": "Cliente eliminado"}
 
 @app.get("/clientes/{cliente_id}/pagos", response_model=ClienteConPagos)
 def leer_pagos_de_cliente(cliente_id: int, db: Session = Depends(get_db)):
@@ -211,6 +325,50 @@ def leer_pagos_de_cliente(cliente_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     # Pydantic usa la relación `cliente.pagos` para poblar la respuesta
     return cliente
+
+@app.post("/convertir-a-usd/", response_model=ConversionResponse)
+async def convertir_monto_a_usd(data: ConversionRequest, db: Session = Depends(get_db)):
+    """Convierte un monto en bolívares a USD usando la tasa BCV con fallback robusto."""
+    try:
+        result = await convertir_payments(db, data.monto_bs)
+    except TasaNoDisponibleError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    return {
+        "monto_bs": float(result["monto_bs"]),
+        "tasa_bcv": float(result["tasa_bcv"]),
+        "fecha_consulta": result["fecha"],
+        "monto_usd": float(result["monto_usd"]),
+        "origen": result["origen"],
+        "es_fallback": result["origen"] != "API",
+    }
+
+@app.get("/tasa-bcv/")
+async def obtener_tasa_bcv_endpoint(db: Session = Depends(get_db)):
+    tasa_info = await get_tasa_bcv(db)
+    tasa = float(tasa_info["tasa"])
+    origen = tasa_info["origen"]
+    fecha = tasa_info["fecha"]
+    es_fallback = origen != "API"
+    return {"tasa_bcv": tasa, "fecha_consulta": fecha, "origen": origen, "es_fallback": es_fallback}
+
+@app.post("/tasa-bcv/")
+def set_tasa_bcv(data: TasaBCVUpdate, db: Session = Depends(get_db), x_api_key: Optional[str] = Header(None)):
+    require_api_key(x_api_key)
+    tasa_bcv = data.tasa_bcv
+    if tasa_bcv <= 0:
+        raise HTTPException(status_code=400, detail="La tasa debe ser mayor que cero")
+
+    tasa_db = db.query(models.TasaCambio).filter(models.TasaCambio.proveedor == "BCV").first()
+    if not tasa_db:
+        tasa_db = models.TasaCambio(proveedor="BCV", monto_tasa=tasa_bcv)
+        db.add(tasa_db)
+    else:
+        tasa_db.monto_tasa = tasa_bcv
+        tasa_db.fecha_actualizacion = func.now()
+
+    db.commit()
+    return {"tasa_bcv": tasa_bcv, "mensaje": "Tasa BCV actualizada"}
 
 @app.get("/ver-pagos/")
 def leer_pagos(page: int = 1, size: int = 10, limit: Optional[int] = None, offset: Optional[int] = None, db: Session = Depends(get_db)):
@@ -223,15 +381,30 @@ def leer_pagos(page: int = 1, size: int = 10, limit: Optional[int] = None, offse
     # Lógica de paginación de SQL
     # Si page=1, skip=0. Si page=2, skip=10.
     skip = (page - 1) * size
-    
+
     pagos = db.query(models.Pago).order_by(desc(models.Pago.id)).offset(skip).limit(size).all()
-    total = db.query(models.Pago).count()
-    
+
+    # Evitar COUNT(*) caro en tablas muy grandes; si la tabla es pequeña o la solicitud lo pide, calcularlo
+    total = None
+    if os.getenv("FORCE_EXACT_COUNT", "false").lower() == "true":
+        total = db.query(models.Pago).count()
+    elif len(pagos) < size or page == 1:
+        # Para la primera página (y pocos resultados) podemos usar un COUNT real sin mucho coste
+        total = db.query(models.Pago).count()
+    else:
+        # Aprox. by using last row index o estimación de Postgres
+        try:
+            total = db.execute("SELECT reltuples::BIGINT AS estimate FROM pg_class WHERE oid = 'pagos'::regclass").scalar()
+            if total is None or total <= 0:
+                total = db.query(models.Pago).count()
+        except Exception:
+            total = db.query(models.Pago).count()
+
     return {
         "items": pagos,
         "total": total,
         "page": page,
-        "pages": (total + size - 1) // size # Cálculo rápido del total de páginas
+        "pages": (total + size - 1) // size if total is not None and total > 0 else 1
     }
 
 @app.get("/buscar-pagos/")
@@ -243,13 +416,27 @@ def buscar_pagos(q: str, page: int = 1, size: int = 10, limit: Optional[int] = N
 
     skip = (page - 1) * size
     query = db.query(models.Pago).filter(models.Pago.referencia.contains(q))
-    total = query.count()
+
     pagos = query.order_by(desc(models.Pago.id)).offset(skip).limit(size).all()
+
+    total = None
+    if os.getenv("FORCE_EXACT_COUNT", "false").lower() == "true":
+        total = query.count()
+    elif len(pagos) < size or page == 1:
+        total = query.count()
+    else:
+        try:
+            total = db.execute("SELECT reltuples::BIGINT AS estimate FROM pg_class WHERE oid = 'pagos'::regclass").scalar()
+            if total is None or total <= 0:
+                total = query.count()
+        except Exception:
+            total = query.count()
+
     return {
-        "items": pagos, 
+        "items": pagos,
         "total": total,
         "page": page,
-        "pages": (total + size - 1) // size
+        "pages": (total + size - 1) // size if total is not None and total > 0 else 1
     }
 
 # --- 1. RUTA PARA SUBIR IMAGEN (Corrección para que funcione el botón) ---
@@ -305,7 +492,13 @@ async def subir_pago(
             )
 
         # 3. Procesar con OCR
-        resultado = ocr_engine.procesar_imagen(filepath)
+        try:
+            resultado = ocr_engine.procesar_imagen(filepath)
+        except ocr_engine.pytesseract.TesseractNotFoundError:
+            logger.error("Error crítico: Tesseract OCR no está instalado o configurado.")
+            raise HTTPException(
+                status_code=500, 
+                detail="El servidor no tiene configurado el motor de lectura OCR (Tesseract).")
         
         # 4. Validación anti-duplicado por lógica de negocio (se mantiene tu lógica)
         ref_ocr = resultado.get("referencia", "S/R")
@@ -327,6 +520,11 @@ async def subir_pago(
         # 5. Guardar en BD
         banco_destino = resultado.get("banco_destino") # Puede ser None
 
+        # Obtener la tasa más reciente con la nueva ruta de intercambio
+        tasa_info = await get_tasa_bcv(db)
+        tasa_actual = float(tasa_info['tasa'])
+        monto_usd_calc = round(monto_ocr / tasa_actual, 2) if tasa_actual > 0 else 0.0
+
         nuevo_pago = models.Pago(
             referencia=ref_ocr,
             banco_origen=banco_origen,
@@ -334,7 +532,9 @@ async def subir_pago(
             monto=monto_ocr,
             ruta_imagen=filepath,
             file_hash=file_hash_str,
-            cliente_id=cliente_id
+            cliente_id=cliente_id,
+            tasa_cambio=tasa_actual,
+            monto_usd=monto_usd_calc
         )
         
         try:
@@ -391,7 +591,7 @@ async def subir_pago(
 
 # --- 2. RUTA PARA REGISTRO MANUAL (Nueva) ---
 @app.post("/pago-manual/")
-def crear_pago_manual(dato: PagoManual, db: Session = Depends(get_db)):
+async def crear_pago_manual(dato: PagoManual, db: Session = Depends(get_db)):
     try:
         # --- VALIDACIÓN ANTI-DUPLICADO MEJORADA ---
         pago_existente = db.query(models.Pago).filter(
@@ -402,13 +602,20 @@ def crear_pago_manual(dato: PagoManual, db: Session = Depends(get_db)):
         if pago_existente:
             raise HTTPException(status_code=409, detail=f"Error: Ya existe un pago con la misma referencia, banco y monto.")
 
+        # Obtener tasa para el registro manual (NCBC nueva función)
+        tasa_info = await get_tasa_bcv(db)
+        tasa_actual = float(tasa_info["tasa"])
+        monto_usd_calc = round(dato.monto / tasa_actual, 2) if tasa_actual > 0 else 0.0
+
         nuevo_pago = models.Pago(
             referencia=dato.referencia,
             banco_origen=dato.banco, # Banco is required on manual
             monto=dato.monto, 
             ruta_imagen="", # Vacío porque es manual
             file_hash="MANUAL",
-            cliente_id=dato.cliente_id
+            cliente_id=dato.cliente_id,
+            tasa_cambio=tasa_actual,
+            monto_usd=monto_usd_calc
         )
         db.add(nuevo_pago)
         db.commit()

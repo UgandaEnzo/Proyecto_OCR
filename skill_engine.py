@@ -16,7 +16,7 @@ class SkillEngine:
             self.client = None
         else:
             self.client = Groq(api_key=self.api_key)
-            print(f"✅ [SkillEngine] Activado con modelo: {self.model}")
+            print(f"[SkillEngine] Activado con modelo: {self.model}")
 
     def _load_skill_file(self, skill_name: str):
         """Lee el archivo Markdown de la carpeta /skills"""

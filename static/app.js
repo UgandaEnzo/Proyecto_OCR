@@ -16,10 +16,16 @@ createApp({
 
     const manualItem = reactive({ banco: '', referencia: '', monto: 0, cliente_id: null });    
     const nuevoCliente = reactive({ nombre: '', cedula: '', telefono: '' });
+    const editandoCliente = ref(null);
+    const qClientes = ref('');
     const clientes = ref([]);
     const clienteSeleccionado = ref(null);
     const pagosCliente = ref([]);
     const cargandoHistorialCliente = ref(false);
+
+    // --- Nuevos estados para la conversión a USD ---
+    const montoBsInput = ref(0.0);
+    const conversionResult = ref(null);
 
     const historial = ref([]);
     const cargandoHistorial = ref(false);
@@ -33,6 +39,7 @@ createApp({
     let historialModal = null;
     let imagenModal = null;
     let clientesModal = null;
+    let editarClienteModal = null;
     let historialClienteModal = null;
 
     // --- Computed ---
@@ -67,7 +74,8 @@ createApp({
     };
 
     const formatMonto = (m) => {
-      return new Intl.NumberFormat('es-VE', { style: 'currency', currency: 'VES' }).format(m);
+      const val = parseFloat(m) || 0;
+      return new Intl.NumberFormat('es-VE', { style: 'currency', currency: 'VES' }).format(val);
     };
 
     const formatAccion = (a) => {
@@ -97,13 +105,64 @@ createApp({
 
     // --- Lógica de Negocio ---
 
+    const convertirMontoADolar = async () => {
+        if (!montoBsInput.value) return;
+        try {
+            const res = await fetch('/convertir-a-usd/', {
+                method: 'POST',
+                headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+                body: JSON.stringify({ monto_bs: montoBsInput.value })
+            });
+            if (res.ok) {
+                conversionResult.value = await res.json();
+            } else {
+                showToast('Error en la conversión', 'danger');
+            }
+        } catch (e) { console.error(e); }
+    };
+
     const cargarClientes = async () => {
         try {
-            const res = await fetch('/clientes/', { headers: getHeaders() });
+            const url = qClientes.value ? `/clientes/?q=${encodeURIComponent(qClientes.value)}` : '/clientes/';
+            const res = await fetch(url, { headers: getHeaders() });
             if (res.ok) {
                 clientes.value = await res.json();
             }
         } catch (e) { console.error('Error cargando clientes:', e); }
+    };
+
+    const prepararEdicion = (cliente) => {
+        editandoCliente.value = { ...cliente };
+        if (editarClienteModal) editarClienteModal.show();
+    };
+
+    const guardarEdicion = async () => {
+        try {
+            const res = await fetch(`/clientes/${editandoCliente.value.id}`, {
+                method: 'PUT',
+                headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+                body: JSON.stringify(editandoCliente.value)
+            });
+            if (res.ok) {
+                showToast('Cliente actualizado', 'success');
+                if (editarClienteModal) editarClienteModal.hide();
+                await cargarClientes();
+            } else {
+                const err = await res.json();
+                showToast(`Error: ${err.detail}`, 'danger');
+            }
+        } catch (e) { showToast('Error de conexión', 'danger'); }
+    };
+
+    const eliminarCliente = async (id) => {
+        if (!confirm('¿Seguro que deseas eliminar este cliente?')) return;
+        try {
+            const res = await fetch(`/clientes/${id}`, { method: 'DELETE', headers: getHeaders() });
+            if (res.ok) {
+                showToast('Cliente eliminado', 'info');
+                await cargarClientes();
+            }
+        } catch (e) { showToast('Error al eliminar', 'danger'); }
     };
 
     const cargar = async (p) => {
@@ -356,13 +415,17 @@ createApp({
         vistaActual,
         pagos, q, page, limit, total, totalPages,
         manualItem, nuevoCliente, clientes,
+        editandoCliente, qClientes,
         historial, cargandoHistorial, imagenSeleccionada, pagoSeleccionado, 
+        montoBsInput, conversionResult, // Exponemos los nuevos estados
+        convertirMontoADolar, // Exponemos la nueva función
         clienteSeleccionado, pagosCliente, cargandoHistorialCliente,
         // Methods
         cargar, buscar, formatMonto, formatAccion,
         verImagen, reprocesar, verHistorial, confirmEliminar,
         cargarClientes, abrirModalClientes, abrirModalSubida, abrirModalManual,
         agregarCliente, guardarManual, cambiarEstado, verHistorialCliente,
+        prepararEdicion, guardarEdicion, eliminarCliente,
         promptApiKey, getUploadUrl
     };
   }

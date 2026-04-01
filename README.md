@@ -9,7 +9,8 @@ Este proyecto es una aplicación web construida con FastAPI para gestionar, veri
 -   **OCR Automático**: Extrae automáticamente referencia, monto y banco de la imagen.
 -   **Análisis con IA**: Utiliza un modelo de lenguaje para interpretar y estructurar los datos del OCR.
 -   **Anti-Duplicados**: Evita el procesamiento de la misma imagen o del mismo pago (referencia + monto + banco).
--   **Gestión de Clientes**: Asocia pagos a clientes recurrentes.
+-   **Gestión de Clientes**: Directorio completo que permite buscar, registrar, editar y eliminar clientes, además de visualizar su historial de pagos individual.
+-   **Calculadora BCV**: Herramienta de conversión de moneda integrada que utiliza la tasa oficial del Banco Central de Venezuela con sistema de contingencia (fallback).
 -   **Auditoría**: Registra un historial de cambios para cada pago.
 -   **Interfaz Web**: Panel de control interactivo construido con Vue.js y Bootstrap.
 
@@ -138,8 +139,51 @@ La documentación interactiva de la API está disponible en `http://127.0.0.1:80
 -   `POST /subir-pago/`: Sube una imagen para procesar un pago.
 -   `POST /pago-manual/`: Registra un pago manualmente sin imagen.
 -   `GET /ver-pagos/`: Lista los pagos con paginación.
--   `GET /buscar-pagos/`: Busca pagos por número de referencia.
+-   `GET /buscar-pagos/`: Busca pagos por número de referencia con paginación.
 -   `PATCH /pago/{pago_id}/estado`: Cambia el estado de un pago (`verificado`, `falso`, etc.).
 -   `POST /reprocesar/{pago_id}`: Vuelve a ejecutar el OCR en un pago existente.
+-   `GET /pago/{pago_id}/historial`: Obtiene la auditoría de cambios de un pago.
+-   `DELETE /eliminar-pago-ref/{referencia}`: Elimina un pago por su referencia (requiere `confirm=true`).
+-   `GET /clientes/`: Lista y busca clientes en el directorio.
 -   `POST /clientes/`: Crea un nuevo cliente.
--   `GET /clientes/`: Lista todos los clientes.
+-   `PUT /clientes/{cliente_id}`: Actualiza la información de un cliente existente.
+-   `DELETE /clientes/{cliente_id}`: Elimina a un cliente del sistema.
+-   `GET /clientes/{cliente_id}/pagos`: Obtiene el historial de pagos de un cliente específico.
+-   `POST /convertir-a-usd/`: Realiza la conversión de montos de Bs a USD usando la tasa oficial.
+
+## Solución de Problemas
+
+### Error 401 - Invalid API Key (Groq)
+Si ves un error `❌ [SkillEngine] Error en la llamada a Groq: Error code: 401` en la consola:
+1. Verifica que la variable `GROQ_API_KEY` en tu archivo `.env` sea correcta.
+2. Asegúrate de que tu clave no tenga espacios adicionales.
+3. El sistema entrará automáticamente en modo **Fallback** (Reglas Rígidas) si la IA falla, por lo que el OCR seguirá funcionando pero con menor precisión en formatos complejos.
+
+---
+
+## Actualización 2026-04-01: Módulo BCV robusto
+Se ha implementado un flujo de tasa BCV con fallback: API + scraping + DB + env. Esta sección detalla los cambios recientes en el proyecto.
+
+### Módulos clave
+- main.py: API principal, endpoints de subir-pago, pago-manual, ver-pagos, tasa-bcv, convertir-a-usd, clientes, auditoría, anti-duplicados.
+- exchange.py: gestión de tasa BCV y conversión Bs/USD con fallback y persistencia en TasaCambio.
+- models.py: SQLAlchemy ORM para Cliente, Pago, PagoHistory, TasaCambio.
+- ocr_engine.py: extracción OCR + fallback con IA (SkillEngine) o reglas con bank_rules.
+- database.py: configuración SQLAlchemy y sesión.
+- skill_engine.py: interacción con servicio Groq (IA).
+
+### Endpoint de tasa BCV (nuevo / mejorado)
+- GET /tasa-bcv/ => devuelve tasa_bcv, fecha_consulta, origen, es_fallback.
+- POST /tasa-bcv/ => actualiza valor con x-api-key.
+- POST /convertir-a-usd/ => convierte con tasa_bcv actual y devuelve monto_usd, origen, es_fallback.
+
+### Nota sobre entorno y certificados
+- TASA_BCV_API_URL en .env.
+- Si hay problemas SSL, usar TASA_BCV_SKIP_TLS_VERIFY=true.
+
+### Prueba de funcionamiento
+1. uvicorn main:app --reload
+2. GET /tasa-bcv/
+3. POST /convertir-a-usd/ {"monto_bs":10000}
+4. confirmar origen != DB si se obtiene tasa actual de API/scraping.
+
