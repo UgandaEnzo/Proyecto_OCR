@@ -54,16 +54,72 @@
                 <i class="bi bi-currency-dollar"></i> Calculadora BCV
             </a>
         </li>
+        <li class="nav-item">
+            <a class="nav-link" :class="{ 'active': vistaActual === 'chat' }" href="#" @click.prevent="vistaActual = 'chat'">
+                <i class="bi bi-robot"></i> Asistente IA
+            </a>
+        </li>
     </ul>
 
     <!-- 2. Vista de Pagos -->
     <div v-if="vistaActual === 'pagos'">
         <div class="card">
             <div class="card-header bg-dark-subtle">
-                <form @submit.prevent="buscar" class="d-flex gap-2">
-                    <input type="search" class="form-control" placeholder="Buscar por número de referencia..." v-model="q">
+                <form @submit.prevent="buscar" class="d-flex gap-2 flex-wrap align-items-center">
+                    <input type="search" class="form-control me-2" placeholder="Buscar por número de referencia..." v-model="q">
+                    <select class="form-select me-2" v-model="bancoFiltro" @change="cargar(0)">
+                        <option value="">Todos los bancos</option>
+                        <option v-for="b in bancosDisponibles" :key="b" :value="b">{{ b }}</option>
+                    </select>
                     <button class="btn btn-info" type="submit"><i class="bi bi-search"></i> Buscar</button>
                 </form>
+            </div>
+            <div class="card-body py-3 bg-dark-subtle">
+                <div class="row g-3">
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small mb-1">Periodo</label>
+                        <select class="form-select" v-model="reportPeriod" @change="cargarReportes">
+                            <option value="diario">Diario</option>
+                            <option value="semanal">Semanal</option>
+                            <option value="quincenal">Quincenal</option>
+                            <option value="mensual">Mensual</option>
+                            <option value="trimestral">Trimestral</option>
+                            <option value="semestral">Semestral</option>
+                            <option value="anual">Anual</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small mb-1">Fecha inicio</label>
+                        <input type="date" class="form-control" v-model="fechaInicio" @change="cargarReportes">
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small mb-1">Fecha fin</label>
+                        <input type="date" class="form-control" v-model="fechaFin" @change="cargarReportes">
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col d-flex flex-wrap gap-2">
+                        <button type="button" class="btn btn-success" @click="exportarReporte('xlsx')">
+                            <i class="bi bi-file-earmark-spreadsheet"></i> Exportar Excel
+                        </button>
+                        <button type="button" class="btn btn-danger" @click="exportarReporte('pdf')">
+                            <i class="bi bi-file-earmark-pdf"></i> Exportar PDF
+                        </button>
+                    </div>
+                </div>
+                <div class="row row-cols-1 row-cols-md-3 g-3 mt-3">
+                    <div class="col" v-for="item in reportes" :key="item.periodo">
+                        <div class="card border-secondary h-100 bg-black bg-opacity-10">
+                            <div class="card-body">
+                                <h6 class="card-title mb-2">{{ item.periodo }}</h6>
+                                <p class="mb-1 text-muted small">{{ formatDate(item.desde) }} - {{ formatDate(item.hasta) }}</p>
+                                <p class="mb-1">Total Bs: <strong>{{ formatNumero(item.total_bs) }}</strong></p>
+                                <p class="mb-1">Total USD: <strong>{{ formatNumero(item.total_usd) }}</strong></p>
+                                <p class="mb-0">Pagos: <strong>{{ item.conteo }}</strong></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="table-responsive">
                 <table class="table table-hover table-sm align-middle mb-0" style="font-size: 0.9rem;">
@@ -72,6 +128,7 @@
                             <th>ID</th>
                             <th>Referencia</th>
                             <th>Banco Origen</th>
+                            <th>Banco Emisor</th>
                             <th>Monto</th>
                             <th>Cliente</th>
                             <th>Estado</th>
@@ -81,12 +138,13 @@
                     </thead>
                     <tbody>
                         <tr v-if="pagos.length === 0">
-                            <td colspan="8" class="text-center text-muted py-4">No hay pagos para mostrar.</td>
+                            <td colspan="9" class="text-center text-muted py-4">No hay pagos para mostrar.</td>
                         </tr>
                         <tr v-for="p in pagos" :key="p.id">
                             <td>{{ p.id }}</td>
                             <td>{{ p.referencia }}</td>
                             <td>{{ p.banco_origen }}</td>
+                            <td>{{ p.banco_emisor || 'Desconocido' }}</td>
                             <td>{{ formatMonto(p.monto) }}</td>
                             <td>
                                 <span v-if="p.cliente" class="badge text-bg-info">{{ p.cliente.nombre }}</span>
@@ -214,6 +272,41 @@
         </div>
     </div>
 
+    <!-- 5. Vista de Asistente IA (Chat) -->
+    <div v-if="vistaActual === 'chat'">
+        <div class="card shadow-sm mx-auto" style="max-width: 800px;">
+            <div class="card-header bg-dark text-white d-flex align-items-center">
+                <i class="bi bi-robot fs-4 me-2"></i>
+                <h5 class="mb-0">Asistente de Conciliación Inteligente</h5>
+            </div>
+            <div class="card-body bg-black bg-opacity-25" style="height: 450px; overflow-y: auto;" id="chatWindow">
+                <div v-if="chatHistory.length === 0" class="text-center text-muted mt-5">
+                    <i class="bi bi-chat-dots fs-1"></i>
+                    <p>Hazme una pregunta sobre tus pagos.<br><small>Ej: "¿Cuánto dinero entró por Banesco hoy?"</small></p>
+                </div>
+                <div v-for="(msg, idx) in chatHistory" :key="idx" :class="['mb-3 d-flex', msg.role === 'user' ? 'justify-content-end' : 'justify-content-start']">
+                    <div :class="['p-3 rounded-3', msg.role === 'user' ? 'bg-primary text-white' : 'bg-secondary text-white']" style="max-width: 80%; box-shadow: 0 2px 4px rgba(0,0,0,0.2)">
+                        <small class="d-block fw-bold mb-1">{{ msg.role === 'user' ? 'Tú' : 'IA' }}</small>
+                        <div style="white-space: pre-wrap;">{{ msg.content }}</div>
+                    </div>
+                </div>
+                <div v-if="cargandoChat" class="text-start mb-3">
+                    <div class="bg-secondary text-white p-3 rounded-3 d-inline-block">
+                        <span class="spinner-grow spinner-grow-sm" role="status"></span> Escribiendo...
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer bg-dark">
+                <form @submit.prevent="enviarConsultaIA" class="input-group">
+                    <input type="text" class="form-control" placeholder="Escribe tu pregunta aquí..." v-model="chatInput" :disabled="cargandoChat">
+                    <button class="btn btn-primary" type="submit" :disabled="!chatInput.trim() || cargandoChat">
+                        <i class="bi bi-send"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- MODALES -->
 
     <!-- Modal Subir Pago -->
@@ -260,7 +353,11 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">Banco Origen</label>
-                        <input type="text" class="form-control" v-model="manualItem.banco">
+                        <select class="form-select" v-model="manualItem.banco">
+                            <option value="">-- Seleccione un banco --</option>
+                            <option v-for="b in bancosDisponibles" :key="b" :value="b">{{ b }}</option>
+                        </select>
+                        <small class="text-muted">Elige el banco desde la lista canónica de reglas.</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Referencia</label>
@@ -438,6 +535,32 @@
                 <div class="modal-body">
                     <div v-if="cargandoHistorialCliente" class="text-center py-5"><div class="spinner-border text-primary"></div></div>
                     <div v-else>
+                        <div class="row mb-3">
+                            <div class="col-12 col-md-4 mb-2">
+                                <div class="card bg-dark text-white h-100">
+                                    <div class="card-body py-2">
+                                        <div class="small text-muted">Pagos</div>
+                                        <div class="fs-4 fw-bold">{{ clienteTotales.total_pagos }}</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-4 mb-2">
+                                <div class="card bg-dark text-white h-100">
+                                    <div class="card-body py-2">
+                                        <div class="small text-muted">Total Bs</div>
+                                        <div class="fs-5 fw-bold">{{ formatMonto(clienteTotales.total_bs) }}</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-4 mb-2">
+                                <div class="card bg-dark text-white h-100">
+                                    <div class="card-body py-2">
+                                        <div class="small text-muted">Total USD</div>
+                                        <div class="fs-5 fw-bold">${{ formatNumero(clienteTotales.total_usd) }}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                         <p v-if="pagosCliente.length === 0" class="text-center text-muted py-4">Este cliente no tiene pagos registrados.</p>
                         <table v-else class="table table-striped table-sm">
                             <thead>

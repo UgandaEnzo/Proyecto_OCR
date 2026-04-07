@@ -95,57 +95,6 @@ async def fetch_tasa_api() -> TasaBCV:
 
     raise TasaNoDisponibleError(f"No se pudo obtener tasa por API en ninguna fuente: {last_error}")
 
-    if not isinstance(data, dict):
-        raise TasaNoDisponibleError("Respuesta de API no es JSON válido")
-
-    # Ajustar según el contrato de API de pydolarve o exchangerate.host u otras APIs similares
-    # Ejemplo: {'tasa': 95.5, ...} o {'base':'VES','rates': {'USD': 0.000021}} u {'base':'USD','rates':{'VES':95.5}}
-    if "tasa" in data and data["tasa"]:
-        try:
-            raw = Decimal(str(data["tasa"]))
-        except Exception as exc:
-            raise TasaNoDisponibleError(f"Tasa inválida en API: {exc}")
-
-        if raw <= 0:
-            raise TasaNoDisponibleError("Tasa de API debe ser mayor que cero")
-
-        return {"tasa": raw.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP), "origen": "API", "fecha": datetime.utcnow()}
-
-    if "rates" in data and isinstance(data["rates"], dict):
-        rates = data["rates"]
-
-        if "USD" in rates and rates["USD"]:
-            try:
-                rate = Decimal(str(rates["USD"]))
-            except Exception as exc:
-                raise TasaNoDisponibleError(f"Tasa inválida en rates USD: {exc}")
-
-            if rate <= 0:
-                raise TasaNoDisponibleError("Tasa de API rates USD debe ser mayor que cero")
-
-            # Si la base está en VES convertimos a VES/USD (1 USD = 1 / (USD/VES))
-            if data.get("base", "").upper() == "VES":
-                tasa_valor = (Decimal("1") / rate).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
-            else:
-                # Si la base es USD u otra, y el precio es USD por algo, invertimos para obtener VES/USD
-                tasa_valor = (Decimal("1") / rate).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
-
-            return {"tasa": tasa_valor, "origen": "API", "fecha": datetime.utcnow()}
-
-        if "VES" in rates and rates["VES"]:
-            try:
-                rate = Decimal(str(rates["VES"]))
-            except Exception as exc:
-                raise TasaNoDisponibleError(f"Tasa inválida en rates VES: {exc}")
-
-            if rate <= 0:
-                raise TasaNoDisponibleError("Tasa de API rates VES debe ser mayor que cero")
-
-            return {"tasa": rate.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP), "origen": "API", "fecha": datetime.utcnow()}
-
-    raise TasaNoDisponibleError("No se encontró campo 'tasa' ni 'rates' válido en respuesta de API")
-
-
 async def fetch_tasa_scraping() -> TasaBCV:
     """Nivel 2: scraping directo del portal del BCV usando BeautifulSoup."""
     url = os.getenv("TASA_BCV_SCRAPING_URL", "https://www.bcv.org.ve")

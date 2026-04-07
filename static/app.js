@@ -22,10 +22,22 @@ createApp({
     const clienteSeleccionado = ref(null);
     const pagosCliente = ref([]);
     const cargandoHistorialCliente = ref(false);
+    const clienteTotales = reactive({ total_bs: 0, total_usd: 0, total_pagos: 0 });
 
     // --- Nuevos estados para la conversión a USD ---
     const montoBsInput = ref(0.0);
     const conversionResult = ref(null);
+
+    const bancoFiltro = ref('');
+    const reportPeriod = ref('mensual');
+    const fechaInicio = ref('');
+    const fechaFin = ref('');
+    const reportes = ref([]);
+
+    // --- Estados para el Chat IA ---
+    const chatInput = ref('');
+    const chatHistory = ref([]);
+    const cargandoChat = ref(false);
 
     const historial = ref([]);
     const cargandoHistorial = ref(false);
@@ -44,6 +56,7 @@ createApp({
 
     // --- Computed ---
     const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit.value)));
+    const bancosDisponibles = ref([]);
 
     // --- Métodos Auxiliares ---
     const getHeaders = () => {
@@ -73,9 +86,31 @@ createApp({
         return '/' + path.replace(/\\/g, '/');
     };
 
+    const cargarBancos = async () => {
+      try {
+        const res = await fetch('/bancos/', { headers: getHeaders() });
+        if (res.ok) {
+          const data = await res.json();
+          bancosDisponibles.value = data.bancos || [];
+        }
+      } catch (e) {
+        console.error('Error cargando bancos:', e);
+      }
+    };
+
     const formatMonto = (m) => {
       const val = parseFloat(m) || 0;
       return new Intl.NumberFormat('es-VE', { style: 'currency', currency: 'VES' }).format(val);
+    };
+
+    const formatNumero = (value) => {
+      const val = parseFloat(value) || 0;
+      return new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
+    };
+
+    const formatDate = (value) => {
+      if (!value) return 'N/A';
+      return new Date(value).toLocaleDateString('es-VE');
     };
 
     const formatAccion = (a) => {
@@ -104,6 +139,35 @@ createApp({
     };
 
     // --- Lógica de Negocio ---
+
+    const enviarConsultaIA = async () => {
+        if (!chatInput.value.trim()) return;
+        
+        const pregunta = chatInput.value;
+        chatHistory.value.push({ role: 'user', content: pregunta });
+        chatInput.value = '';
+        cargandoChat.value = true;
+
+        try {
+            const res = await fetch('/IA/consultar/', {
+                method: 'POST',
+                headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pregunta: pregunta })
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                chatHistory.value.push({ role: 'assistant', content: data.respuesta });
+            } else {
+                showToast('La IA no pudo responder en este momento', 'danger');
+            }
+        } catch (e) {
+            console.error(e);
+            showToast('Error de conexión con el servicio de IA', 'danger');
+        } finally {
+            cargandoChat.value = false;
+        }
+    };
 
     const convertirMontoADolar = async () => {
         if (!montoBsInput.value) return;
@@ -137,6 +201,15 @@ createApp({
     };
 
     const guardarEdicion = async () => {
+        if (!editandoCliente.value.nombre || !editandoCliente.value.cedula) {
+            showToast('El nombre y la cédula son obligatorios.', 'warning');
+            return;
+        }
+        const isNumeric = (val) => /^\d+$/.test(val);
+        if (!isNumeric(editandoCliente.value.cedula) || (editandoCliente.value.telefono && !isNumeric(editandoCliente.value.telefono))) {
+            showToast('La cédula y el teléfono deben ser estrictamente numéricos.', 'warning');
+            return;
+        }
         try {
             const res = await fetch(`/clientes/${editandoCliente.value.id}`, {
                 method: 'PUT',
@@ -167,9 +240,13 @@ createApp({
 
     const cargar = async (p) => {
       page.value = Math.max(0, p);
-      const base = q.value ? `/buscar-pagos/?q=${encodeURIComponent(q.value)}` : `/ver-pagos/`;
-      const sep = base.includes('?') ? '&' : '?';
-      const url = `${base}${sep}page=${page.value + 1}&size=${limit.value}`;
+      const base = `/ver-pagos/`;
+      const params = new URLSearchParams();
+      params.set('page', page.value + 1);
+      params.set('size', limit.value);
+      if (q.value) params.set('q', q.value);
+      if (bancoFiltro.value) params.set('banco', bancoFiltro.value);
+      const url = `${base}?${params.toString()}`;
       try {
         const res = await fetch(url, { headers: getHeaders() });
         if (!res.ok) throw new Error(await res.text());
@@ -182,6 +259,51 @@ createApp({
     const buscar = async () => {
       page.value = 0;
       await cargar(0);
+    };
+
+    const cargarReportes = async () => {
+      let url = `/reportes/?tipo_reporte=${encodeURIComponent(reportPeriod.value)}`;
+      if (fechaInicio.value) {
+          url += `&start_date=${encodeURIComponent(fechaInicio.value)}`;
+      }
+      if (fechaFin.value) {
+          url += `&end_date=${encodeURIComponent(fechaFin.value)}`;
+      }
+
+      try {
+          const res = await fetch(url, { headers: getHeaders() });
+          if (!res.ok) throw new Error(await res.text());
+          const data = await res.json();
+          reportes.value = data.resultados || [];
+      } catch (e) {
+          console.error('Error cargar reportes:', e);
+          reportes.value = [];
+      }
+    };
+
+    const exportarReporte = async (formato) => {
+        let url = `/reportes/export/?tipo_reporte=${encodeURIComponent(reportPeriod.value)}&format=${encodeURIComponent(formato)}`;
+        if (fechaInicio.value) url += `&start_date=${encodeURIComponent(fechaInicio.value)}`;
+        if (fechaFin.value) url += `&end_date=${encodeURIComponent(fechaFin.value)}`;
+
+        try {
+            const res = await fetch(url, { headers: getHeaders() });
+            if (!res.ok) throw new Error(await res.text());
+
+            const blob = await res.blob();
+            const a = document.createElement('a');
+            const extension = formato === 'pdf' ? 'pdf' : 'xlsx';
+            a.href = URL.createObjectURL(blob);
+            a.download = `reportes-${reportPeriod.value}.${extension}`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(a.href);
+            showToast(`Reporte exportado como ${extension.toUpperCase()}`, 'success');
+        } catch (e) {
+            console.error('Error exportar reporte:', e);
+            showToast('No se pudo exportar el reporte', 'danger');
+        }
     };
 
     const cambiarEstado = async (pagoId, nuevoEstado) => {
@@ -230,8 +352,13 @@ createApp({
     };
 
     const agregarCliente = async () => {
-        if (!nuevoCliente.nombre) {
-            showToast('El nombre del cliente es requerido.', 'warning');
+        if (!nuevoCliente.nombre || !nuevoCliente.cedula) {
+            showToast('El nombre y la cédula son obligatorios.', 'warning');
+            return;
+        }
+        const isNumeric = (val) => /^\d+$/.test(val);
+        if (!isNumeric(nuevoCliente.cedula) || (nuevoCliente.telefono && !isNumeric(nuevoCliente.telefono))) {
+            showToast('La cédula y el teléfono deben contener solo números.', 'warning');
             return;
         }
         try {
@@ -276,6 +403,9 @@ createApp({
     const verHistorialCliente = async (cliente) => {
         clienteSeleccionado.value = cliente;
         pagosCliente.value = [];
+        clienteTotales.total_bs = 0;
+        clienteTotales.total_usd = 0;
+        clienteTotales.total_pagos = 0;
         cargandoHistorialCliente.value = true;
         if (historialClienteModal) historialClienteModal.show();
 
@@ -284,6 +414,9 @@ createApp({
             if (res.ok) {
                 const data = await res.json();
                 pagosCliente.value = data.pagos;
+                clienteTotales.total_bs = data.total_bs || 0;
+                clienteTotales.total_usd = data.total_usd || 0;
+                clienteTotales.total_pagos = data.total_pagos || 0;
             } else {
                 showToast('No se pudo cargar el historial del cliente', 'danger');
                 if (historialClienteModal) historialClienteModal.hide();
@@ -407,21 +540,25 @@ createApp({
         if (hcModalEl) historialClienteModal = new bootstrap.Modal(hcModalEl);
 
         bindUpload();
+        cargarBancos();
         cargar(0);
+        cargarReportes();
         cargarClientes(); // Cargar clientes al inicio
     });
 
     return {
         vistaActual,
-        pagos, q, page, limit, total, totalPages,
+        pagos, q, page, limit, total, totalPages, bancosDisponibles,
         manualItem, nuevoCliente, clientes,
         editandoCliente, qClientes,
         historial, cargandoHistorial, imagenSeleccionada, pagoSeleccionado, 
-        montoBsInput, conversionResult, // Exponemos los nuevos estados
-        convertirMontoADolar, // Exponemos la nueva función
+        montoBsInput, conversionResult, bancoFiltro, reportPeriod, fechaInicio, fechaFin, reportes,
+        clienteTotales,
+        chatInput, chatHistory, cargandoChat, enviarConsultaIA,
+        convertirMontoADolar,
         clienteSeleccionado, pagosCliente, cargandoHistorialCliente,
         // Methods
-        cargar, buscar, formatMonto, formatAccion,
+        cargar, buscar, cargarReportes, exportarReporte, cargarBancos, formatMonto, formatNumero, formatDate, formatAccion,
         verImagen, reprocesar, verHistorial, confirmEliminar,
         cargarClientes, abrirModalClientes, abrirModalSubida, abrirModalManual,
         agregarCliente, guardarManual, cambiarEstado, verHistorialCliente,

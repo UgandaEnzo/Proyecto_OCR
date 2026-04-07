@@ -1,5 +1,6 @@
 import sys
 import os
+import argparse
 from sqlalchemy import text
 
 # Agregar el directorio raíz al path para poder importar database y models
@@ -7,7 +8,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-from database import SessionLocal, engine
+from database import engine
 import models
 
 def limpiar_uploads():
@@ -54,8 +55,15 @@ def vaciar_base_datos():
         print(f"Error al reiniciar la base de datos: {e}")
 
 if __name__ == "__main__":
-    confirm = input("ADVERTENCIA: Esto borrará TODOS los datos y las IMÁGENES asociadas. ¿Estás seguro? (escribe 'si'): ")
-    if confirm.lower() == 'si':
+    parser = argparse.ArgumentParser(description="Reinicia la base de datos y limpia archivos subidos.")
+    parser.add_argument("--force", action="store_true", help="Omitir la confirmación interactiva.")
+    args = parser.parse_args()
+
+    if args.force:
         vaciar_base_datos()
     else:
-        print("Operación cancelada.")
+        confirm = input("ADVERTENCIA: Esto borrará TODOS los datos y las IMÁGENES asociadas. ¿Estás seguro? (escribe 'si'): ")
+        if confirm.lower() == 'si':
+            vaciar_base_datos()
+        else:
+            print("Operación cancelada.")

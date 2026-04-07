@@ -1,121 +1,194 @@
-import cv2
-import pytesseract
-from pytesseract import Output
-import re
-import numpy as np
-from PIL import Image
-import unicodedata
 import os
+import re
+import json
+import cv2
+import numpy as np
+import base64
+from groq import Groq
+from PIL import Image
 import bank_rules
-from skill_engine import SkillEngine
 from dotenv import load_dotenv
- 
-# --- Configuración de Tesseract ---
-# Aseguramos que se carguen las variables de entorno para detectar TESSERACT_CMD
+from ocr_utils import engine, normalizar_texto
+
 load_dotenv()
 
-# Busca la ruta del ejecutable de Tesseract en la variable de entorno TESSERACT_CMD.
-# Si la variable está definida y la ruta es válida, se usa.
-# Si no, se asume que 'tesseract' está en el PATH del sistema.
-tesseract_cmd = os.getenv("TESSERACT_CMD")
-if tesseract_cmd and os.path.exists(tesseract_cmd):
-    pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
-    print(f"[OCR] Tesseract configurado en: {tesseract_cmd}")
-else:
-    print("❌ [OCR] ADVERTENCIA: TESSERACT_CMD no configurada o ruta inválida.")
-    print("   Asegúrate de instalar Tesseract OCR y definir TESSERACT_CMD en tu archivo .env")
-    print("   Ejemplo: TESSERACT_CMD=C:\\Program Files\\Tesseract-OCR\\tesseract.exe")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_VISION_MODEL = "llama-3.2-11b-vision-preview"
 
-# Instancia global del motor de skills
-skill_engine = SkillEngine()
+client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
-def procesar_con_skill(texto_crudo):
-    """Intenta procesar el texto usando la Skill de IA."""
-    print("[OCR] Intentando extracción con Skill IA...")
-    data = skill_engine.extraer_datos(texto_crudo)
+def encode_image(image_path):
+    """Codifica la imagen en base64 para los modelos de visión de Groq."""
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
+
+def extraer_texto(ruta_imagen):
+    """Usa RapidOCR para extraer texto plano de la imagen."""
+    if engine is None:
+        return ""
     
-    # Validación simple para saber si la IA falló
-    if not data or not data.get("referencia") or data.get("referencia") in ["S/R", "No detectada", ""]:
-        print("[OCR] Skill IA no encontró referencia o falló.")
+    try:
+        # RapidOCR devuelve (result, elapse_time)
+        # result es una lista de [dt_boxes, rec_res, score]
+        result, _ = engine(ruta_imagen)
+        if result:
+            # Unimos todos los rec_res (texto detectado) en un solo string
+            textos = [line[1] for line in result]
+            return " ".join(textos)
+    except Exception as e:
+        print(f"❌ [OCR] Error procesando imagen con RapidOCR: {e}")
+    return ""
+
+def analizar_con_vision(image_path):
+    """Fallback avanzado: Envía la imagen directamente a Llama Vision."""
+    if not client: return None
+    try:
+        base64_image = encode_image(image_path)
+        prompt = """
+        Analiza este comprobante de pago venezolano. 
+        Extrae: banco, monto, referencia y cedula.
+        El monto suele estar cerca de 'Bs.' o 'Total'.
+        Responde estrictamente en JSON: {"banco": "...", "monto": 0.0, "referencia": "...", "cedula": "..."}
+        """
+        response = client.chat.completions.create(
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}
+                    }
+                ]
+            }],
+            model=GROQ_VISION_MODEL,
+            response_format={"type": "json_object"},
+        )
+        return json.loads(response.choices[0].message.content)
+    except Exception as e:
+        print(f"⚠️ [Vision] Error: {e}")
+        return None
+
+def limpiar_datos_ia(texto_ocr):
+    """Utiliza Groq para estructurar el texto sucio del OCR en un JSON limpio."""
+    if not client or not texto_ocr:
         return None
     
-    # Normalizar salida
-    data["source"] = "AI_SKILL"
-    
-    # --- MEJORA: Limpieza robusta del monto ---
-    # A veces la IA devuelve strings como "1.500,00" aunque le pidamos float.
-    raw_monto = data.get("monto")
+    prompt = """
+    Eres un experto financiero analizando comprobantes de pago en Venezuela (Pago Móvil y Transferencias). 
+    Del siguiente texto extraído por OCR, extrae:
+    1. 'banco': Nombre del banco emisor.
+    2. 'monto': Valor numérico (usa punto como decimal).
+    3. 'referencia': Número de operación (6-12 dígitos). Corrige 'O' por '0' si es necesario.
+    4. 'cedula': Documento de identidad del emisor si aparece.
+
+    Responde estrictamente en formato JSON con estas llaves: {"banco": "...", "monto": 0.0, "referencia": "...", "cedula": "..."}.
+    Si no estás seguro de un campo, pon null.
+    """
+
     try:
-        if isinstance(raw_monto, str):
-            # Eliminar todo lo que no sea número, punto o coma
-            clean = re.sub(r'[^\d.,]', '', raw_monto)
-            # Lógica Venezuela: Si hay coma, reemplazar por punto para Python
-            if ',' in clean:
-                clean = clean.replace('.', '').replace(',', '.')
-            data["monto"] = float(clean)
-        else:
-            data["monto"] = float(raw_monto or 0.0)
+        response = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": texto_ocr}
+            ],
+            model=GROQ_MODEL,
+            response_format={"type": "json_object"},
+            temperature=0.0,
+        )
+        contenido = response.choices[0].message.content
+        return json.loads(contenido)
     except Exception as e:
-        print(f"[OCR] Error parseando monto IA: {e}")
-        data["monto"] = 0.0
+        print(f"⚠️ [IA] Error en limpieza con Groq: {e}")
+    return None
 
-    print(f"[OCR] Skill IA Éxito: {data}")
-    return data
+def limpiar_monto(valor):
+    if valor is None: return 0.0
+    if isinstance(valor, (int, float)): return float(valor)
+    s = str(valor).lower().strip()
+    s = re.sub(r'bs\.?|bol[ií]vares|ves|monto|total|pagado|importe', '', s)
+    s = re.sub(r'[^\d.,]', '', s).strip('.,')
+    if not s: return 0.0
+    dots = s.count('.')
+    commas = s.count(',')
+    if commas == 1:
+        parts = s.split(',')
+        entero = parts[0].replace('.', '')
+        decimal = parts[1]
+        try: return float(f"{entero}.{decimal}")
+        except: pass
+    if dots > 0 and commas == 0:
+        parts = s.split('.')
+        if dots > 1: return float("".join(parts))
+        last_part = parts[-1]
+        if len(last_part) <= 2: return float(f"{parts[0]}.{last_part}")
+        else: return float("".join(parts))
+    try: return float(s.replace('.', '').replace(',', ''))
+    except: return 0.0
 
-def procesar_imagen(image_path, aggressive=False):
-    print(f"[OCR] Imagen recibida: {image_path}")
-    
-    # 1. Cargar Imagen
-    img_initial = cv2.imread(image_path)
-    if img_initial is None:
+def procesar_pago_ocr(image_path, aggressive=False):
+    """Flujo Principal: RapidOCR -> bank_rules -> Groq Fallback."""
+    # 1. Carga de imagen con validación
+    img_cv = cv2.imread(image_path)
+    if img_cv is None:
         try:
             pil_img = Image.open(image_path).convert("RGB")
-            img_initial = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-        except Exception:
+            img_cv = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+        except Exception as e:
+            print(f"❌ [OCR] Imagen inválida o ilegible: {e}")
             return {"referencia": "No detectada", "monto": 0.0, "banco": "Desconocido", "texto_completo": ""}
 
-    if aggressive:
-        print("[OCR] Aplicando pre-procesamiento agresivo (Reintento)...")
-        # CLAHE en canal L (Lab) para mejorar contraste local
-        lab = cv2.cvtColor(img_initial, cv2.COLOR_BGR2LAB)
-        l, a, b = cv2.split(lab)
-        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
-        cl = clahe.apply(l)
-        limg = cv2.merge((cl,a,b))
-        img_initial = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
+    # 2. Ejecutar RapidOCR (Extracción de texto base)
+    texto_completo = extraer_texto(image_path)
+    
+    # 3. Clasificación mediante reglas locales (Rápido y privado)
+    estrategia = bank_rules.get_bank_strategy(texto_completo, img_cv)
+    resultado_final = {
+        "referencia": "No detectada",
+        "monto": 0.0,
+        "banco": "Desconocido",
+        "texto_completo": texto_completo,
+        "source": "UNKNOWN"
+    }
 
-    # 2. Lectura Inicial (Identificación)
-    gray_initial = cv2.cvtColor(img_initial, cv2.COLOR_BGR2GRAY)
-    
-    # --- MEJORA: Detección automática de Modo Oscuro ---
-    # Si el brillo promedio es bajo (< 110), invertimos los colores para que Tesseract lea mejor.
-    if np.mean(gray_initial) < 110:
-        print("[OCR] Detectado fondo oscuro. Invirtiendo colores para mejorar lectura...")
-        gray_initial = cv2.bitwise_not(gray_initial)
-
-    # Aumentamos más la escala (2.0x) para capturar números pequeños o borrosos
-    gray_initial = cv2.resize(gray_initial, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-    texto_completo = pytesseract.image_to_string(gray_initial, config='--psm 6')
-    
-    # 3. Intento Principal: Skill IA (LLM)
-    resultado = procesar_con_skill(texto_completo)
-    
-    # 4. Fallback: Reglas Rígidas (Legacy)
-    if not resultado:
-        print("[OCR] Usando Fallback: Reglas Rígidas (bank_rules)")
-        # Obtener Estrategia (Factory)
-        estrategia = bank_rules.get_bank_strategy(texto_completo, img_initial)
-        print(f"[OCR] Banco detectado (Reglas): {estrategia.name}")
+    # Si detectamos un banco específico, intentamos procesarlo localmente
+    if estrategia and estrategia.name.lower() != "desconocido":
+        resultado_local = estrategia.procesar_comprobante(img_cv, texto_completo)
         
-        # Ejecutar Estrategia
-        resultado = estrategia.procesar_comprobante(img_initial, texto_completo)
-        resultado["source"] = "RULES_LEGACY"
+        # Validación de calidad: Si tenemos monto y referencia, terminamos aquí
+        if resultado_local.get("referencia") != "No detectada" and resultado_local.get("monto", 0) > 0:
+            resultado_local["source"] = "RULES_LOCAL"
+            return resultado_local
+        else:
+            # Si las reglas fallaron en extraer datos clave, marcamos para IA
+            print(f"[OCR] Reglas para {estrategia.name} incompletas. Usando IA...")
+            resultado_final.update(resultado_local)
+
+    # 4. Fallback con IA (Texto)
+    ai_data = limpiar_datos_ia(texto_completo)
     
-    # Asegurar que el texto completo viaje en la respuesta para depuración
-    resultado["texto_completo"] = texto_completo
-    
-    print(f"[OCR] Monto extraído: {resultado['monto']}")
-    print(f"[OCR] Referencia extraída: {resultado['referencia']}")
-    print(f"[OCR] Método utilizado: {resultado.get('source', 'Unknown')}")
-    
-    return resultado
+    # 5. ULTIMA INSTANCIA: Si la IA de texto no tiene monto, usamos VISION
+    if (not ai_data or not ai_data.get("monto")) and not aggressive:
+        print("[OCR] Fallback de texto fallido. Activando Llama Vision...")
+        ai_data = analizar_con_vision(image_path)
+
+    if ai_data and isinstance(ai_data, dict):
+        banco_ia = ai_data.get("banco") or resultado_final.get("banco")
+        monto_ia = limpiar_monto(ai_data.get("monto")) or resultado_final.get("monto")
+        ref_ia = str(ai_data.get("referencia") or resultado_final.get("referencia"))
+
+        return {
+            "banco": banco_ia,
+            "banco_origen": banco_ia,
+            "referencia": ref_ia,
+            "monto": monto_ia,
+            "cedula": ai_data.get("cedula"),
+            "texto_completo": texto_completo,
+            "source": "AI_GROQ"
+        }
+
+    return resultado_final
+
+def procesar_imagen(image_path, aggressive=False):
+    return procesar_pago_ocr(image_path, aggressive)

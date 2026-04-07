@@ -9,7 +9,7 @@ class Cliente(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String, index=True, nullable=False)
-    cedula = Column(String, unique=True, index=True, nullable=True)
+    cedula = Column(String, unique=True, index=True, nullable=False)
     telefono = Column(String, index=True, nullable=True)
 
     # Relación bidireccional: desde un cliente se puede acceder a sus pagos
@@ -21,6 +21,7 @@ class Pago(Base):
     id = Column(Integer, primary_key=True, index=True)
     referencia = Column(String, index=True) # Ej: 123456
     banco_origen = Column(String)           # Ej: Banco Venezuela
+    banco_emisor = Column(String, nullable=True, default="Desconocido") # Banco emisor detectado por OCR/IA
     banco_destino = Column(String, nullable=True) # Ej: Banesco
     monto = Column(Float)                   # Ej: 100.50
     monto_usd = Column(Float, nullable=True, default=0.0)

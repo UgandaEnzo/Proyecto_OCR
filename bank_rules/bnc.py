@@ -1,6 +1,6 @@
 from .base_bank import BankStrategy
 import cv2
-import pytesseract
+from ocr_utils import extraer_texto_de_imagen_cv2
 import re
 
 class BncStrategy(BankStrategy):
@@ -15,7 +15,7 @@ class BncStrategy(BankStrategy):
         
         _, thresh = cv2.threshold(contrast, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         
-        txt_ocr = pytesseract.image_to_string(thresh, config='--psm 6')
+        txt_ocr = extraer_texto_de_imagen_cv2(thresh)
         
         monto = 0.0
         

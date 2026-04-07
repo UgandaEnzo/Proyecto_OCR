@@ -1,14 +1,25 @@
 Sistema de Conciliación de Pagos con OCR y IA
 =============================================
 
-Este proyecto es una aplicación web construida con FastAPI para gestionar, verificar y conciliar pagos recibidos a través de imágenes de comprobantes (captures). Utiliza Tesseract para el OCR, Groq para el análisis con IA, y SQLAlchemy para la persistencia de datos.
+Este proyecto es una solución de backend y panel administrativo construida con FastAPI para automatizar la conciliación de pagos. Utiliza **RapidOCR** para la extracción de texto, **Groq (Llama 3)** para el análisis semántico con IA, y **SQLAlchemy** para la gestión de datos y auditoría.
 
 ## Características
 
 -   **Carga de Pagos**: Sube imágenes de comprobantes de pago.
 -   **OCR Automático**: Extrae automáticamente referencia, monto y banco de la imagen.
 -   **Análisis con IA**: Utiliza un modelo de lenguaje para interpretar y estructurar los datos del OCR.
+-   **Integridad Financiera**: Cálculos con precisión decimal (Decimal Type) para evitar errores de redondeo.
+-   **Seguridad Anti-Fraude**: Sistema de hashing SHA256 para evitar duplicidad de comprobantes físicos.
+-   **Resiliencia de Tasa**: Sistema de 4 niveles para obtención de tasa BCV (API, Scraping, DB, Env).
+-   **Trazabilidad**: Auditoría completa de cada cambio en los estados de pago.
+
+## Calidad del Código
+El proyecto sigue principios **SOLID** y utiliza `Pydantic` para validación de datos en tiempo real, asegurando que solo información limpia llegue a la base de datos.
+-   **Reglas bancarias ampliadas**: Soporte directo para más bancos venezolanos y detección reforzada con el módulo `bank_rules`.
+-   **Filtro de banco dinámico**: La UI carga la lista canónica de bancos desde el backend para que los filtros y los pagos manuales sean consistentes.
+-   **Exportación de reportes**: Descarga reportes agregados como PDF o Excel directamente desde la interfaz.
 -   **Anti-Duplicados**: Evita el procesamiento de la misma imagen o del mismo pago (referencia + monto + banco).
+-   **Registro manual normalizado**: El formulario manual ahora utiliza una lista de bancos validada y un backend que normaliza las entradas.
 -   **Gestión de Clientes**: Directorio completo que permite buscar, registrar, editar y eliminar clientes, además de visualizar su historial de pagos individual.
 -   **Calculadora BCV**: Herramienta de conversión de moneda integrada que utiliza la tasa oficial del Banco Central de Venezuela con sistema de contingencia (fallback).
 -   **Auditoría**: Registra un historial de cambios para cada pago.
@@ -27,8 +38,13 @@ Este proyecto es una aplicación web construida con FastAPI para gestionar, veri
 ├── main.py               # Archivo principal de la aplicación FastAPI
 ├── models.py             # Modelos de la base de datos (SQLAlchemy)
 ├── database.py           # Configuración de la conexión a la base de datos
-├── ocr_engine.py         # Lógica de procesamiento de imágenes y OCR
-├── skill_engine.py       # Lógica de interacción con la API de Groq
+├── ocr_engine.py         # Orquestador del flujo OCR (RapidOCR + AI Fallbacks)
+├── ocr_utils.py          # Utilidades y carga del motor RapidOCR
+├── bank_rules.py         # Reglas deterministas por banco
+├── exchange.py           # Gestión de tasa BCV y conversiones
+├── skill_engine.py       # Interfaz para prompts estructurados de Groq
+├── setup_project.py      # Script de automatización de entorno y compilación
+├── run.py                # Script de entrada para el servidor
 └── requirements.txt      # Dependencias de Python
 ```
 
@@ -46,6 +62,8 @@ Este proyecto es una aplicación web construida con FastAPI para gestionar, veri
     ```bash
     pip install -r requirements.txt
     ```
+    > Si tu editor muestra errores de importación, asegúrate de seleccionar el intérprete Python de tu entorno virtual `.venv`.
+    > Nota: Se recomienda Python 3.10 o superior (compatible con 3.14+).
 
 4.  **Crear el archivo `.env`:**
     Crea un archivo llamado `.env` en la raíz del proyecto y añade las siguientes variables:
@@ -57,11 +75,15 @@ Este proyecto es una aplicación web construida con FastAPI para gestionar, veri
     GROQ_API_KEY="gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
     # --- Variables Opcionales (con valores por defecto) ---
-    
-    # Ruta al ejecutable de Tesseract-OCR (si no está en el PATH del sistema).
-    # Descomenta y ajusta la línea si es necesario.
-    # En Windows, usa dobles barras invertidas.
-    # TESSERACT_CMD="C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
+
+    # Activar o desactivar el motor OCR principal
+    MOTOR_OCR_ACTIVO=1
+
+    # Usar GPU para EasyOCR (true/false)
+    USAR_GPU_OCR=false
+
+    # Modelo de Groq para análisis de pago móvil
+    GROQ_MODEL="llama-3.3-70b-versatile"
 
     # Nivel de logs: DEBUG, INFO, WARNING, ERROR
     LOG_LEVEL=INFO
@@ -88,7 +110,7 @@ Puedes empaquetar esta aplicación en un único archivo ejecutable para distribu
 
 **Importante:** El ejecutable seguirá necesitando dos cosas en la máquina de destino:
 1.  **Conexión a la base de datos PostgreSQL.** El `.env` junto al `.exe` debe apuntar a ella.
-2.  **Tesseract-OCR instalado.** Deberás instalarlo y asegurarte de que su ruta esté en el `PATH` del sistema o configurarla en la variable `TESSERACT_CMD` del archivo `.env`.
+2.  **Motor ONNX.** El ejecutable utiliza `rapidocr_onnxruntime`, que es significativamente más ligero y rápido que PyTorch/EasyOCR.
 
 **Pasos:**
 
@@ -109,17 +131,25 @@ Puedes empaquetar esta aplicación en un único archivo ejecutable para distribu
     ```
 
 3.  **Ejecutar PyInstaller:**
-    Desde la terminal, en la raíz del proyecto, ejecuta el siguiente comando. Este le indica a PyInstaller que cree un solo archivo (`--onefile`), le dé un nombre (`--name`), y que incluya las carpetas y archivos necesarios (`--add-data`).
+    Desde la terminal, en la raíz del proyecto, ejecuta el siguiente comando. Este le indica a PyInstaller que cree un solo archivo (`--onefile`), le dé un nombre (`--name`), y que incluya las carpetas y archivos necesarios (`--add-data`). También añade imports ocultos necesarios para EasyOCR/Torch.
 
     ```bash
     # En Windows (usa ; como separador para --add-data)
-    pyinstaller --name "OcrApp" --onefile --add-data "static;static" --add-data "skills;skills" --add-data ".env;." run.py
+    pyinstaller --name "OcrApp" --onefile --clean \
+      --hidden-import rapidocr_onnxruntime \
+      --hidden-import pillow \
+      --hidden-import numpy \
+      --hidden-import openpyxl \
+      --hidden-import reportlab \
+      --add-data "static;static" --add-data "skills;skills" run.py
     ```
+
+    > Nota: El archivo `.env` debe situarse en la misma carpeta que el `.exe` para que la aplicación cargue la configuración correctamente.
 
 4.  **Encontrar el ejecutable:**
     Una vez que el proceso termine, encontrarás `OcrApp.exe` dentro de una nueva carpeta llamada `dist`. Puedes copiar este archivo a otra máquina, colocar un archivo `.env` configurado a su lado, y ejecutarlo. La carpeta `uploads/` se creará automáticamente al primer uso.
 
-2.  **Migraciones de Base de Datos (Alembic):**
+5.  **Migraciones de Base de Datos (Alembic):**
     Cuando realices cambios en los `models.py`, necesitarás generar y aplicar una migración.
 
     -   **Generar una nueva migración:**
@@ -138,7 +168,11 @@ La documentación interactiva de la API está disponible en `http://127.0.0.1:80
 
 -   `POST /subir-pago/`: Sube una imagen para procesar un pago.
 -   `POST /pago-manual/`: Registra un pago manualmente sin imagen.
--   `GET /ver-pagos/`: Lista los pagos con paginación.
+-   `GET /bancos/`: Devuelve la lista canónica de bancos soportados por el filtro y el formulario manual.
+-   `GET /ver-pagos/`: Lista los pagos con paginación y admite filtro opcional por `banco` y `q`.
+-   `GET /pagos/`: Lista los pagos filtrados por banco emisor u origen con paginación.
+-   `GET /reportes/`: Genera reportes agregados por período (`diario`, `semanal`, `quincenal`, `mensual`, `trimestral`, `semestral`, `anual`) y acepta `start_date` / `end_date`.
+-   `GET /reportes/export/`: Exporta el reporte como `pdf` o `xlsx` usando los mismos filtros de período y fechas.
 -   `GET /buscar-pagos/`: Busca pagos por número de referencia con paginación.
 -   `PATCH /pago/{pago_id}/estado`: Cambia el estado de un pago (`verificado`, `falso`, etc.).
 -   `POST /reprocesar/{pago_id}`: Vuelve a ejecutar el OCR en un pago existente.
@@ -187,3 +221,9 @@ Se ha implementado un flujo de tasa BCV con fallback: API + scraping + DB + env.
 3. POST /convertir-a-usd/ {"monto_bs":10000}
 4. confirmar origen != DB si se obtiene tasa actual de API/scraping.
 
+## Actualización 2026-04-04: Reglas bancarias y registro manual
+Esta versión añade las siguientes mejoras:
+- `bank_rules` ahora expone una lista canónica de bancos con soporte extendido para múltiples bancos venezolanos.
+- El motor legacy de OCR usa `bank_rules` como fallback para identificar el banco cuando la IA no es concluyente.
+- El formulario de pago manual muestra un selector de bancos cargado desde `GET /bancos/` y normaliza los bancos en el backend.
+- El filtro de pagos por banco en la UI consume la misma lista canónica, reduciendo inconsistencias entre filtros y registros.

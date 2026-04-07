@@ -1,6 +1,6 @@
 from .base_bank import BankStrategy
 import cv2
-import pytesseract
+from ocr_utils import extraer_texto_de_imagen_cv2
 import re
 
 class DelsurStrategy(BankStrategy):
@@ -12,7 +12,7 @@ class DelsurStrategy(BankStrategy):
         gray = cv2.cvtColor(imagen, cv2.COLOR_BGR2GRAY)
         _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         
-        txt_ocr = pytesseract.image_to_string(thresh, config='--psm 6')
+        txt_ocr = extraer_texto_de_imagen_cv2(thresh)
         
         monto = 0.0
         # Patrón: Monto: Bs. 123,45
