@@ -127,8 +127,7 @@
                         <tr class="table-dark">
                             <th>ID</th>
                             <th>Referencia</th>
-                            <th>Banco Origen</th>
-                            <th>Banco Emisor</th>
+                            <th>Banco</th>
                             <th>Monto</th>
                             <th>Cliente</th>
                             <th>Estado</th>
@@ -138,13 +137,12 @@
                     </thead>
                     <tbody>
                         <tr v-if="pagos.length === 0">
-                            <td colspan="9" class="text-center text-muted py-4">No hay pagos para mostrar.</td>
+                            <td colspan="8" class="text-center text-muted py-4">No hay pagos para mostrar.</td>
                         </tr>
                         <tr v-for="p in pagos" :key="p.id">
                             <td>{{ p.id }}</td>
                             <td>{{ p.referencia }}</td>
-                            <td>{{ p.banco_origen }}</td>
-                            <td>{{ p.banco_emisor || 'Desconocido' }}</td>
+                            <td>{{ p.banco }}</td>
                             <td>{{ formatMonto(p.monto) }}</td>
                             <td>
                                 <span v-if="p.cliente" class="badge text-bg-info">{{ p.cliente.nombre }}</span>
@@ -244,28 +242,24 @@
                 <h5 class="mb-0"><i class="bi bi-calculator"></i> Conversor de Divisas (Tasa Oficial BCV)</h5>
             </div>
             <div class="card-body">
-                <p class="text-muted small">Introduce un monto en Bolívares para calcular su equivalente en Dólares según el Banco Central de Venezuela.</p>
-                <div class="input-group mb-3">
-                    <span class="input-group-text">Bs.</span>
-                    <input type="number" class="form-control form-control-lg" v-model.number="montoBsInput" placeholder="0.00" step="0.01">
-                    <button class="btn btn-primary" @click="convertirMontoADolar">
-                        <i class="bi bi-arrow-repeat"></i> Calcular
-                    </button>
+                <div class="text-center mb-4">
+                    <span class="badge bg-info text-dark">Tasa BCV: {{ tasaActualCalc }} Bs/$</span>
+                    <button class="btn btn-sm btn-link text-decoration-none" @click="refrescarTasaCalculadora"><i class="bi bi-arrow-clockwise"></i> Actualizar tasa</button>
                 </div>
-
-                <div v-if="conversionResult" class="mt-4 p-3 border rounded bg-dark border-primary">
-                    <div class="d-flex justify-content-between mb-2">
-                        <span>Monto en Bolívares:</span>
-                        <strong>{{ formatMonto(conversionResult.monto_bs) }}</strong>
+                <div class="row g-4">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Bolívares (Bs.)</label>
+                        <div class="input-group input-group-lg">
+                            <span class="input-group-text bg-primary text-white border-0">Bs</span>
+                            <input type="number" class="form-control border-primary" v-model.number="calcBs" @input="syncCalculadora('bs')" placeholder="0.00">
+                        </div>
                     </div>
-                    <div class="d-flex justify-content-between mb-2">
-                        <span>Tasa BCV:</span>
-                        <span class="badge bg-info text-dark">{{ conversionResult.tasa_bcv }} Bs/$</span>
-                    </div>
-                    <hr>
-                    <div class="text-center">
-                        <div class="text-muted small mb-1">Equivalente aproximado</div>
-                        <h2 class="text-success mb-0">${{ conversionResult.monto_usd.toFixed(2) }} <small class="text-muted" style="font-size: 0.5em;">USD</small></h2>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Dólares ($)</label>
+                        <div class="input-group input-group-lg">
+                            <span class="input-group-text bg-success text-white border-0">$</span>
+                            <input type="number" class="form-control border-success" v-model.number="calcUsd" @input="syncCalculadora('usd')" placeholder="0.00">
+                        </div>
                     </div>
                 </div>
             </div>
@@ -326,6 +320,13 @@
                             <input class="form-control" type="file" name="file" accept="image/*">
                         </div>
                         <div class="mb-3">
+                            <label class="form-label">Banco <span class="text-danger">*</span></label>
+                            <select class="form-select" name="banco" v-model="uploadBank" required>
+                                <option value="" disabled>-- Seleccione el Banco --</option>
+                                <option v-for="b in bancosDisponibles" :key="b" :value="b">{{ b }}</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
                             <label class="form-label">Cliente Recurrente (Opcional)</label>
                             <select class="form-select" name="cliente_id">
                                 <option value="">-- Ninguno / Cliente Nuevo --</option>
@@ -336,7 +337,10 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-primary" id="uploadSubmit">Subir y Procesar</button>
+                    <button type="button" class="btn btn-primary" @click="subirPago" :disabled="!uploadBank || procesandoSubida">
+                        <span v-if="procesandoSubida" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        {{ procesandoSubida ? ' Procesando...' : 'Subir y Procesar' }}
+                    </button>
                 </div>
             </div>
         </div>
@@ -352,12 +356,11 @@
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label class="form-label">Banco Origen</label>
-                        <select class="form-select" v-model="manualItem.banco">
-                            <option value="">-- Seleccione un banco --</option>
+                        <label class="form-label">Banco <span class="text-danger">*</span></label>
+                        <select class="form-select" v-model="manualItem.banco" required>
+                            <option value="" disabled>-- Seleccione un banco --</option>
                             <option v-for="b in bancosDisponibles" :key="b" :value="b">{{ b }}</option>
                         </select>
-                        <small class="text-muted">Elige el banco desde la lista canónica de reglas.</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Referencia</label>
@@ -377,7 +380,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-primary" @click="guardarManual">Guardar</button>
+                    <button type="button" class="btn btn-primary" @click="guardarManual" :disabled="!manualItem.banco">Guardar</button>
                 </div>
             </div>
         </div>
@@ -476,8 +479,8 @@
                                     <strong class="text-success fs-5">${{ pagoSeleccionado.monto_usd }}</strong>
                                 </li>
                                 <li class="list-group-item d-flex justify-content-between align-items-center">
-                                    Banco Origen:
-                                    <span>{{ pagoSeleccionado.banco_origen }}</span>
+                                    Banco:
+                                    <span>{{ pagoSeleccionado.banco }}</span>
                                 </li>
                                 <li class="list-group-item d-flex justify-content-between align-items-center">
                                     Estado:

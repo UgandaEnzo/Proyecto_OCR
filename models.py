@@ -20,8 +20,7 @@ class Pago(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     referencia = Column(String, index=True) # Ej: 123456
-    banco_origen = Column(String)           # Ej: Banco Venezuela
-    banco_emisor = Column(String, nullable=True, default="Desconocido") # Banco emisor detectado por OCR/IA
+    banco = Column(String, index=True)      # Campo unificado para el banco (Origen/Emisor)
     banco_destino = Column(String, nullable=True) # Ej: Banesco
     monto = Column(Float)                   # Ej: 100.50
     monto_usd = Column(Float, nullable=True, default=0.0)

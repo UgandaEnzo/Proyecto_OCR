@@ -14,6 +14,8 @@ createApp({
 
     const vistaActual = ref('pagos'); // 'pagos' o 'clientes'
 
+    const procesandoSubida = ref(false);
+    const uploadBank = ref('');
     const manualItem = reactive({ banco: '', referencia: '', monto: 0, cliente_id: null });    
     const nuevoCliente = reactive({ nombre: '', cedula: '', telefono: '' });
     const editandoCliente = ref(null);
@@ -24,8 +26,10 @@ createApp({
     const cargandoHistorialCliente = ref(false);
     const clienteTotales = reactive({ total_bs: 0, total_usd: 0, total_pagos: 0 });
 
-    // --- Nuevos estados para la conversión a USD ---
-    const montoBsInput = ref(0.0);
+    // --- Calculadora Bi-direccional ---
+    const calcBs = ref(0);
+    const calcUsd = ref(0);
+    const tasaActualCalc = ref(1.0);
     const conversionResult = ref(null);
 
     const bancoFiltro = ref('');
@@ -169,20 +173,21 @@ createApp({
         }
     };
 
-    const convertirMontoADolar = async () => {
-        if (!montoBsInput.value) return;
-        try {
-            const res = await fetch('/convertir-a-usd/', {
-                method: 'POST',
-                headers: { ...getHeaders(), 'Content-Type': 'application/json' },
-                body: JSON.stringify({ monto_bs: montoBsInput.value })
-            });
-            if (res.ok) {
-                conversionResult.value = await res.json();
-            } else {
-                showToast('Error en la conversión', 'danger');
-            }
-        } catch (e) { console.error(e); }
+    const syncCalculadora = (origen) => {
+        if (origen === 'bs') {
+            calcUsd.value = calcBs.value > 0 ? (calcBs.value / tasaActualCalc.value).toFixed(2) : 0;
+        } else {
+            calcBs.value = calcUsd.value > 0 ? (calcUsd.value * tasaActualCalc.value).toFixed(2) : 0;
+        }
+    };
+
+    const refrescarTasaCalculadora = async () => {
+        const res = await fetch('/tasa-bcv/', { headers: getHeaders() });
+        if (res.ok) {
+            const data = await res.json();
+            tasaActualCalc.value = data.tasa_bcv;
+            syncCalculadora('bs');
+        }
     };
 
     const cargarClientes = async () => {
@@ -467,18 +472,11 @@ createApp({
       } catch (e) { showToast('Error al eliminar', 'danger'); }
     };
 
-    // --- Bind Upload Form (Legacy DOM manipulation adapted) ---
-    const bindUpload = () => {
-      const btn = document.getElementById('uploadSubmit');
-      const form = document.getElementById('uploadForm');
-      const errorDiv = document.getElementById('uploadError');
-      if(!btn || !form || !errorDiv) return;
+    const subirPago = async () => {
+        const form = document.getElementById('uploadForm');
+        const errorDiv = document.getElementById('uploadError');
+        if(!form || !errorDiv) return;
 
-      const newBtn = btn.cloneNode(true);
-      btn.parentNode.replaceChild(newBtn, btn);
-
-      newBtn.addEventListener('click', async () => {
-        // Ocultar error previo al reintentar
         errorDiv.classList.add('d-none');
         errorDiv.textContent = '';
 
@@ -490,36 +488,31 @@ createApp({
         }
         
         const fd = new FormData(form);
-        // Limpieza: Si cliente_id es string vacío, lo quitamos para que no falle la validación int
         if (!fd.get('cliente_id')) fd.delete('cliente_id');
 
-        newBtn.disabled = true;
-        newBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Procesando...';
+        procesandoSubida.value = true;
         try {
-          const res = await fetch('/subir-pago/', { method: 'POST', body: fd, headers: getHeaders() });
-          let r;
-          try { r = await res.json(); } catch(e){ r = { mensaje: await res.text() }; }
-          
-          if (res.ok) {
-            showToast(r.mensaje || 'Pago subido y procesado', 'success');
-            uploadModal.hide();
-            form.reset();
-            cargar(0);
-          } else {
-            const errorMessage = r.mensaje || r.detail || 'Ocurrió un error al procesar la imagen.';
-            errorDiv.textContent = errorMessage;
-            errorDiv.classList.remove('d-none');
-          }
+            const res = await fetch('/subir-pago/', { method: 'POST', body: fd, headers: getHeaders() });
+            let r;
+            try { r = await res.json(); } catch(e){ r = { mensaje: await res.text() }; }
+            
+            if (res.ok) {
+                showToast(r.mensaje || 'Pago subido y procesado', 'success');
+                uploadModal.hide();
+                form.reset();
+                uploadBank.value = '';
+                cargar(0);
+            } else {
+                errorDiv.textContent = r.mensaje || r.detail || 'Ocurrió un error al procesar la imagen.';
+                errorDiv.classList.remove('d-none');
+            }
         } catch (e) {
-          console.error(e);
-          const errorMessage = 'Error de conexión. Verifica tu red e inténtalo de nuevo.';
-          errorDiv.textContent = errorMessage;
-          errorDiv.classList.remove('d-none');
+            console.error(e);
+            errorDiv.textContent = 'Error de conexión. Verifica tu red.';
+            errorDiv.classList.remove('d-none');
         } finally {
-          newBtn.disabled = false;
-          newBtn.textContent = 'Subir y Procesar';
+            procesandoSubida.value = false;
         }
-      });
     };
 
     // --- Lifecycle ---
@@ -539,7 +532,6 @@ createApp({
         const hcModalEl = document.getElementById('historialClienteModal');
         if (hcModalEl) historialClienteModal = new bootstrap.Modal(hcModalEl);
 
-        bindUpload();
         cargarBancos();
         cargar(0);
         cargarReportes();
@@ -547,19 +539,19 @@ createApp({
     });
 
     return {
-        vistaActual,
+        vistaActual, uploadBank, procesandoSubida,
         pagos, q, page, limit, total, totalPages, bancosDisponibles,
         manualItem, nuevoCliente, clientes,
         editandoCliente, qClientes,
         historial, cargandoHistorial, imagenSeleccionada, pagoSeleccionado, 
-        montoBsInput, conversionResult, bancoFiltro, reportPeriod, fechaInicio, fechaFin, reportes,
+        calcBs, calcUsd, tasaActualCalc, conversionResult, bancoFiltro, reportPeriod, fechaInicio, fechaFin, reportes,
         clienteTotales,
         chatInput, chatHistory, cargandoChat, enviarConsultaIA,
-        convertirMontoADolar,
+        syncCalculadora, refrescarTasaCalculadora,
         clienteSeleccionado, pagosCliente, cargandoHistorialCliente,
         // Methods
         cargar, buscar, cargarReportes, exportarReporte, cargarBancos, formatMonto, formatNumero, formatDate, formatAccion,
-        verImagen, reprocesar, verHistorial, confirmEliminar,
+        verImagen, reprocesar, verHistorial, confirmEliminar, subirPago,
         cargarClientes, abrirModalClientes, abrirModalSubida, abrirModalManual,
         agregarCliente, guardarManual, cambiarEstado, verHistorialCliente,
         prepararEdicion, guardarEdicion, eliminarCliente,

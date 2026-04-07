@@ -2,10 +2,8 @@ import os
 import shutil
 import uuid
 import logging
-from logging.handlers import RotatingFileHandler
 import hashlib
 import traceback
-import threading
 import io
 from enum import Enum
 from typing import Optional, List
@@ -16,7 +14,8 @@ import requests
 from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Header, Body
 from fastapi.responses import JSONResponse, FileResponse, Response, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.orm import Session
+from logging.handlers import RotatingFileHandler
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, desc, exc as sa_exc, text
 from datetime import datetime
 from pydantic import BaseModel, field_validator
@@ -31,7 +30,6 @@ from database import engine, get_db, Base
 import models
 import ocr_engine  # Tu motor de OCR
 import bank_rules
-
 def _setup_logging() -> logging.Logger:
     """Configura un logger robusto que escribe en consola y en archivos rotativos."""
     os.makedirs("logs", exist_ok=True)
@@ -172,8 +170,7 @@ class PagoParaCliente(BaseModel):
 class PagoResponse(BaseModel):
     id: int
     referencia: str
-    banco_origen: str
-    banco_emisor: Optional[str] = None
+    banco: str
     banco_destino: Optional[str] = None
     monto: float
     monto_usd: Optional[float] = None
@@ -181,6 +178,7 @@ class PagoResponse(BaseModel):
     fecha_registro: datetime
     estado: str
     cliente_id: Optional[int] = None
+    cliente: Optional[Cliente] = None
 
     class Config:
         from_attributes = True
@@ -340,15 +338,40 @@ def leer_pagos_de_cliente(cliente_id: int, db: Session = Depends(get_db)):
 @app.post("/IA/consultar/")
 async def consultar_datos_ia(query: ChatQuery, db: Session = Depends(get_db)):
     """Permite hacer preguntas sobre los pagos en lenguaje natural."""
-    # Obtenemos un resumen de los últimos 50 pagos para dar contexto a la IA
-    pagos = db.query(models.Pago).order_by(desc(models.Pago.id)).limit(50).all()
-    contexto = "\n".join([f"- Ref: {p.referencia}, Banco: {p.banco_origen}, Monto: {p.monto} Bs, Estado: {p.estado}" for p in pagos])
+    # 1. Consultas rápidas para contexto de negocio
+    total_clientes = db.query(models.Cliente).count()
+    
+    # Mejor cliente (más pagos realizados)
+    mejor_cliente = db.query(
+        models.Cliente.nombre, 
+        func.count(models.Pago.id).label('total')
+    ).join(models.Pago).group_by(models.Cliente.id).order_by(text('total DESC')).first()
+    nombre_mejor = mejor_cliente.nombre if mejor_cliente else "N/A"
+
+    # Recaudación mes actual
+    inicio_mes = datetime.now().replace(day=1, hour=0, minute=0, second=0)
+    recaudado_mes = db.query(func.sum(models.Pago.monto)).filter(models.Pago.fecha_registro >= inicio_mes).scalar() or 0.0
+    
+    # Últimos 5 pagos
+    ultimos_pagos = db.query(models.Pago).order_by(desc(models.Pago.id)).limit(5).all()
+    contexto_pagos = "\n".join([
+        f"- Ref: {p.referencia}, Banco: {p.banco}, Monto: {p.monto} Bs, Cliente: {p.cliente.nombre if p.cliente else 'Particular'}" 
+        for p in ultimos_pagos
+    ])
     
     prompt = f"""
-    Eres un asistente contable. Basado en estos últimos pagos:
-    {contexto}
+    Eres un asistente contable experto del Sistema de Conciliación.
+    DATOS ACTUALES DE LA BASE DE DATOS:
+    - Clientes totales: {total_clientes}
+    - Mejor cliente (frecuencia): {nombre_mejor}
+    - Total recaudado este mes: {recaudado_mes:,.2f} Bs.
     
-    Responde a la siguiente pregunta del usuario de forma breve y profesional:
+    ÚLTIMOS 5 PAGOS REGISTRADOS:
+    {contexto_pagos}
+
+    INSTRUCCIONES:
+    Responde de forma breve y profesional. Si te preguntan sobre ingresos de hoy, usa los últimos pagos como referencia.
+    PREGUNTA DEL USUARIO:
     {query.pregunta}
     """
     
@@ -430,11 +453,10 @@ def leer_pagos(q: Optional[str] = None, banco: Optional[str] = None, page: int =
     if banco:
         termino = f"%{banco}%"
         query = query.filter(
-            (models.Pago.banco_emisor.ilike(termino)) |
-            (models.Pago.banco_origen.ilike(termino))
+            models.Pago.banco.ilike(termino)
         )
 
-    pagos = query.order_by(desc(models.Pago.id)).offset(skip).limit(size).all()
+    pagos = query.options(joinedload(models.Pago.cliente)).order_by(desc(models.Pago.id)).offset(skip).limit(size).all()
 
     # Evitar COUNT(*) caro en tablas muy grandes; si la tabla es pequeña o la solicitud lo pide, calcularlo
     total = None
@@ -469,7 +491,7 @@ def buscar_pagos(q: str, page: int = 1, size: int = 10, limit: Optional[int] = N
     skip = (page - 1) * size
     query = db.query(models.Pago).filter(models.Pago.referencia.contains(q))
 
-    pagos = query.order_by(desc(models.Pago.id)).offset(skip).limit(size).all()
+    pagos = query.options(joinedload(models.Pago.cliente)).order_by(desc(models.Pago.id)).offset(skip).limit(size).all()
 
     total = None
     if os.getenv("FORCE_EXACT_COUNT", "false").lower() == "true":
@@ -498,12 +520,11 @@ def listar_pagos(banco: Optional[str] = None, page: int = 1, size: int = 10, db:
     if banco:
         termino = f"%{banco}%"
         query = query.filter(
-            (models.Pago.banco_emisor.ilike(termino)) |
-            (models.Pago.banco_origen.ilike(termino))
+            models.Pago.banco.ilike(termino)
         )
 
     skip = (page - 1) * size
-    pagos = query.order_by(desc(models.Pago.id)).offset(skip).limit(size).all()
+    pagos = query.options(joinedload(models.Pago.cliente)).order_by(desc(models.Pago.id)).offset(skip).limit(size).all()
 
     total = None
     if os.getenv("FORCE_EXACT_COUNT", "false").lower() == "true":
@@ -628,7 +649,7 @@ def _crear_excel_reporte(resultados: List[dict], pagos_detalle: List[models.Pago
     for p in pagos_detalle:
         ws_det.append([
             p.referencia,
-            p.banco_origen,
+            p.banco,
             p.fecha_registro.strftime("%Y-%m-%d %H:%M") if p.fecha_registro else "N/A",
             p.monto,
             p.tasa_cambio,
@@ -708,7 +729,7 @@ def _crear_pdf_reporte(resultados: List[dict], pagos_detalle: List[models.Pago],
     for p in pagos_detalle:
         data_det.append([
             p.referencia,
-            (p.banco_origen[:12] + '..') if p.banco_origen and len(p.banco_origen) > 12 else p.banco_origen,
+            (p.banco[:12] + '..') if p.banco and len(p.banco) > 12 else p.banco,
             p.fecha_registro.strftime("%Y-%m-%d") if p.fecha_registro else "N/A",
             f"{p.monto:.2f}",
             f"{p.tasa_cambio:.2f}",
@@ -776,6 +797,7 @@ def obtener_reportes(tipo_reporte: str = "mensual", start_date: Optional[datetim
 @app.post("/subir-pago/")
 async def subir_pago(
     file: UploadFile = File(...), 
+    banco: str = Form(...),
     cliente_id: Optional[int] = Form(None),
     comentario: Optional[str] = Form(None),
     db: Session = Depends(get_db),
@@ -832,19 +854,24 @@ async def subir_pago(
             raise HTTPException(status_code=500, detail=str(e))
 
         # 4. Validación anti-duplicado por lógica de negocio (se mantiene tu lógica)
-        ref_ocr = resultado.get("referencia", "S/R")
-        banco_origen = resultado.get("banco_origen") or resultado.get("banco", "Desconocido")
-        monto_ocr = float(resultado.get("monto") or 0.0)
+        # Priorizamos los datos limpios devueltos por la IA (Groq)
+        ref_ocr = str(resultado.get("referencia", "No detectada"))
+        
+        try:
+            # Aseguramos que el monto sea float para cálculos y base de datos
+            monto_ocr = float(resultado.get("monto") or 0.0)
+        except (ValueError, TypeError):
+            monto_ocr = 0.0
 
         if ref_ocr not in ["S/R", "No detectada"]:
             pago_existente = db.query(models.Pago).filter(
                 models.Pago.referencia == ref_ocr,
-                models.Pago.banco_origen == banco_origen,
+                models.Pago.banco == banco,
                 models.Pago.monto == monto_ocr
             ).first()
             if pago_existente:
                 return JSONResponse(
-                    content={"mensaje": f"Error: Ya existe un pago con la misma referencia ({ref_ocr}), banco ({banco_origen}) y monto."}, 
+                    content={"mensaje": f"Error: Ya existe un pago con la misma referencia ({ref_ocr}), banco ({banco}) and monto."}, 
                     status_code=409
                 )
 
@@ -858,8 +885,7 @@ async def subir_pago(
 
         nuevo_pago = models.Pago(
             referencia=ref_ocr,
-            banco_origen=banco_origen,
-            banco_emisor=resultado.get("banco_emisor") or banco_origen,
+            banco=banco,
             banco_destino=banco_destino,
             monto=monto_ocr,
             ruta_imagen=filepath,
@@ -892,9 +918,9 @@ async def subir_pago(
         # 6. Auditoría (PagoHistory) - Se mantiene tu lógica
         origen_datos = resultado.get("source", "RULES_LEGACY") # Default si no viene
         
-        detalles_audit = f"Creado vía /subir-pago/. Motor: {origen_datos}. Ref: {ref_ocr}"
+        detalles_audit = f"Creado vía /subir-pago/. Motor: {origen_datos}. Ref: {ref_ocr}. Banco: {nuevo_pago.banco}"
         if banco_destino:
-             detalles_audit += f". Origen: {banco_origen} -> Destino: {banco_destino}"
+             detalles_audit += f" -> Destino: {banco_destino}"
 
         registrar_auditoria(
             db, 
@@ -928,7 +954,7 @@ async def crear_pago_manual(dato: PagoManual, db: Session = Depends(get_db)):
         # --- VALIDACIÓN ANTI-DUPLICADO MEJORADA ---
         pago_existente = db.query(models.Pago).filter(
             models.Pago.referencia == dato.referencia,
-            models.Pago.banco_origen == dato.banco,
+            models.Pago.banco == dato.banco,
             models.Pago.monto == dato.monto
         ).first()
         if pago_existente:
@@ -951,8 +977,7 @@ async def crear_pago_manual(dato: PagoManual, db: Session = Depends(get_db)):
 
         nuevo_pago = models.Pago(
             referencia=dato.referencia,
-            banco_origen=banco_normalizado,
-            banco_emisor=banco_normalizado,
+            banco=banco_normalizado,
             monto=dato.monto, 
             ruta_imagen="", # Vacío porque es manual
             file_hash="MANUAL",
@@ -991,22 +1016,18 @@ def reprocesar_pago(pago_id: int, db: Session = Depends(get_db)):
         resultado = ocr_engine.procesar_imagen(pago.ruta_imagen)
         
         # 3. Actualizar datos (No borramos para mantener el ID, solo actualizamos)
-        # BUGFIX: Usar el mismo patrón que en /subir-pago para obtener el banco
-        banco_nuevo = resultado.get("banco_origen") or resultado.get("banco", pago.banco_origen)
         banco_dest_nuevo = resultado.get("banco_destino", pago.banco_destino)
         ref_nueva = resultado.get("referencia", pago.referencia)
         monto_nuevo = float(resultado.get("monto") or pago.monto)
 
         pago.referencia = ref_nueva
-        pago.banco_origen = banco_nuevo
-        pago.banco_emisor = resultado.get("banco_emisor") or banco_nuevo
         pago.banco_destino = banco_dest_nuevo
         pago.monto = monto_nuevo
         
         db.commit()
 
         # Mejoramos el detalle de la auditoría
-        detalles_audit = f"Re-escaneo IA. Ref: {ref_nueva}, Banco: {banco_nuevo}, Monto: {monto_nuevo}"
+        detalles_audit = f"Re-escaneo IA. Ref: {ref_nueva}, Banco: {pago.banco}, Monto: {monto_nuevo}"
 
         registrar_auditoria(
             db, 
