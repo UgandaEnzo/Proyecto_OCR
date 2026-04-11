@@ -1,11 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import collect_all
+
+rapidocr_datas, rapidocr_binaries, rapidocr_hiddenimports = collect_all('rapidocr_onnxruntime')
 
 a = Analysis(
     ['run.py'],
     pathex=[],
-    binaries=[],
-    datas=[('static', 'static')],
+    binaries=rapidocr_binaries,
+    datas=[('static', 'static')] + rapidocr_datas,
     hiddenimports=[
         'rapidocr_onnxruntime',
         'onnxruntime',
@@ -17,8 +20,8 @@ a = Analysis(
         'httpx',
         'bs4',
         'psycopg2',
-        'sqlalchemy'
-    ],
+        'sqlalchemy',
+    ] + rapidocr_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

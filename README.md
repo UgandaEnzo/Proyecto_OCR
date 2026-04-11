@@ -150,6 +150,8 @@ Puedes empaquetar esta aplicación en un único archivo ejecutable para distribu
 
     > Nota: `scripts/` es solo para desarrollo y pruebas locales. No se agrega al ejecutable porque no se incluye como recurso ni se importa en tiempo de ejecución.
 
+    > Recomendado: usa `OcrApp.spec` para incluir correctamente los recursos de RapidOCR en el ejecutable.
+
     > Nota: El archivo `.env` debe situarse en la misma carpeta que el `.exe` para que la aplicación cargue la configuración correctamente.
 
 4.  **Encontrar el ejecutable:**
