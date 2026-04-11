@@ -5,7 +5,7 @@ a = Analysis(
     ['run.py'],
     pathex=[],
     binaries=[],
-    datas=[('static', 'static'), ('skills', 'skills')],
+    datas=[('static', 'static')],
     hiddenimports=[
         'rapidocr_onnxruntime',
         'onnxruntime',

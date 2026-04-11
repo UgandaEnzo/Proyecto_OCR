@@ -1,0 +1,4 @@
+# Dependencias de desarrollo y herramientas de empaquetado
+pyinstaller
+pytest
+alembic

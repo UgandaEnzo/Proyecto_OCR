@@ -1,4 +1,5 @@
 import os
+import sys
 import shutil
 import uuid
 import logging
@@ -6,6 +7,7 @@ import hashlib
 import traceback
 import io
 from enum import Enum
+from pathlib import Path
 from typing import Optional, List
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
@@ -23,7 +25,9 @@ from pydantic import BaseModel, field_validator
 from exchange import get_tasa_bcv, convertir_payments, TasaNoDisponibleError
 
 # Carga las variables de entorno desde un archivo .env ANTES de importar módulos locales
-load_dotenv()
+base_dir = Path(sys.executable if getattr(sys, 'frozen', False) else __file__).resolve().parent
+dotenv_path = base_dir / '.env'
+load_dotenv(dotenv_path=dotenv_path)
 
 # Importamos tus módulos (ahora database.py es más robusto)
 from database import engine, get_db, Base

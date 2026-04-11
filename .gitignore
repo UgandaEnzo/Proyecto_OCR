@@ -1,0 +1,13 @@
+.venv/
+venv_produccion/
+dist/
+build/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.sqlite3
+.env
+.pytest_cache/
+logs/
+OcrApp.exe

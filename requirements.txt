@@ -4,7 +4,6 @@ uvicorn[standard]
 python-multipart
 
 # Data & Database
-alembic
 psycopg2-binary
 pydantic
 sqlalchemy
@@ -27,5 +26,3 @@ python-dotenv
 httpx
 beautifulsoup4
 requests
-pyinstaller
-pytest

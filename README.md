@@ -38,14 +38,16 @@ El proyecto sigue principios **SOLID** y utiliza `Pydantic` para validación de 
 ├── main.py               # Archivo principal de la aplicación FastAPI
 ├── models.py             # Modelos de la base de datos (SQLAlchemy)
 ├── database.py           # Configuración de la conexión a la base de datos
-├── ocr_engine.py         # Orquestador del flujo OCR (RapidOCR + AI Fallbacks)
+├── ocr_engine.py         # Orquestador del flujo OCR (RapidOCR + Groq AI)
 ├── ocr_utils.py          # Utilidades y carga del motor RapidOCR
-├── bank_rules.py         # Reglas deterministas por banco
+├── bank_rules/           # Reglas deterministas por banco (paquete modular)
 ├── exchange.py           # Gestión de tasa BCV y conversiones
-├── skill_engine.py       # Interfaz para prompts estructurados de Groq
+├── scripts/              # Utilidades y pruebas de desarrollo (no se empaqueta en el .exe)
 ├── setup_project.py      # Script de automatización de entorno y compilación
 ├── run.py                # Script de entrada para el servidor
-└── requirements.txt      # Dependencias de Python
+├── OcrApp.spec           # Configuración de PyInstaller para empaquetado
+├── requirements.txt      # Dependencias de producción
+└── requirements-dev.txt  # Dependencias de desarrollo y empaquetado
 ```
 
 ## Configuración del Entorno
@@ -64,26 +66,33 @@ El proyecto sigue principios **SOLID** y utiliza `Pydantic` para validación de 
     ```
     > Si tu editor muestra errores de importación, asegúrate de seleccionar el intérprete Python de tu entorno virtual `.venv`.
     > Nota: Se recomienda Python 3.10 o superior (compatible con 3.14+).
+    > Para herramientas de desarrollo, migraciones y empaquetado opcional, instala también `requirements-dev.txt`.
 
 4.  **Crear el archivo `.env`:**
     Crea un archivo llamado `.env` en la raíz del proyecto y añade las siguientes variables:
     ```env
-    # URL de conexión a tu base de datos PostgreSQL
+    # URL de conexión a tu base de datos PostgreSQL.
+    # Se recomienda usar DATABASE_URL para simplificar la configuración.
     DATABASE_URL="postgresql://user:password@host:port/database"
+
+    # Si no usas DATABASE_URL, define las siguientes variables de conexión:
+    # DB_USER="usuario"
+    # DB_PASS="clave"
+    # DB_HOST="localhost"
+    # DB_PORT="5432"
+    # DB_NAME="nombre_de_la_base"
 
     # Clave de API para el servicio de Groq
     GROQ_API_KEY="gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
-    # --- Variables Opcionales (con valores por defecto) ---
-
-    # Activar o desactivar el motor OCR principal
-    MOTOR_OCR_ACTIVO=1
-
-    # Usar GPU para EasyOCR (true/false)
-    USAR_GPU_OCR=false
+    # --- Variables de OCR y configuración ---
 
     # Modelo de Groq para análisis de pago móvil
-    GROQ_MODEL="llama-3.3-70b-versatile"
+    GROQ_MODEL="llama3-8b-8192"
+
+    # URL opcional para el servicio de tasa BCV
+    # TASA_BCV_API_URL="https://api.bcv.example/v1/tasa"
+    # TASA_BCV_SKIP_TLS_VERIFY=false
 
     # Nivel de logs: DEBUG, INFO, WARNING, ERROR
     LOG_LEVEL=INFO
@@ -119,19 +128,14 @@ Puedes empaquetar esta aplicación en un único archivo ejecutable para distribu
     pip install pyinstaller
     ```
 
-2.  **Crear un script de entrada:**
-    PyInstaller no puede ejecutar directamente el comando `uvicorn`. Crea un archivo llamado `run.py` en la raíz del proyecto con el siguiente contenido:
-
-    ```python
-    import uvicorn
-
-    if __name__ == "__main__":
-        from main import app
-        uvicorn.run(app, host="0.0.0.0", port=8000)
+2.  **Instalar dependencias de desarrollo (opcional):**
+    Si necesitas empaquetar el proyecto, ejecutar migraciones o ejecutar pruebas, instala también los extras de desarrollo:
+    ```bash
+    pip install -r requirements-dev.txt
     ```
 
 3.  **Ejecutar PyInstaller:**
-    Desde la terminal, en la raíz del proyecto, ejecuta el siguiente comando. Este le indica a PyInstaller que cree un solo archivo (`--onefile`), le dé un nombre (`--name`), y que incluya las carpetas y archivos necesarios (`--add-data`). También añade imports ocultos necesarios para EasyOCR/Torch.
+    Desde la terminal, en la raíz del proyecto, ejecuta el siguiente comando. Este le indica a PyInstaller que cree un solo archivo (`--onefile`), le dé un nombre (`--name`), y que incluya los archivos necesarios de `static`.
 
     ```bash
     # En Windows (usa ; como separador para --add-data)
@@ -141,8 +145,10 @@ Puedes empaquetar esta aplicación en un único archivo ejecutable para distribu
       --hidden-import numpy \
       --hidden-import openpyxl \
       --hidden-import reportlab \
-      --add-data "static;static" --add-data "skills;skills" run.py
+      --add-data "static;static" run.py
     ```
+
+    > Nota: `scripts/` es solo para desarrollo y pruebas locales. No se agrega al ejecutable porque no se incluye como recurso ni se importa en tiempo de ejecución.
 
     > Nota: El archivo `.env` debe situarse en la misma carpeta que el `.exe` para que la aplicación cargue la configuración correctamente.
 
@@ -160,8 +166,7 @@ Puedes empaquetar esta aplicación en un único archivo ejecutable para distribu
         ```bash
         alembic upgrade head
         ```
-    -   **Scripts de Mantenimiento**: En la carpeta `scripts/` encontrarás utilidades como `fill_file_hash.py` para poblar el hash de archivos en registros antiguos.
-
+    -   **Mantenimiento**: Las migraciones se manejan con `alembic` en la raíz del proyecto.
 ## Endpoints de la API
 
 La documentación interactiva de la API está disponible en `http://127.0.0.1:8000/api/docs`.
@@ -188,10 +193,10 @@ La documentación interactiva de la API está disponible en `http://127.0.0.1:80
 ## Solución de Problemas
 
 ### Error 401 - Invalid API Key (Groq)
-Si ves un error `❌ [SkillEngine] Error en la llamada a Groq: Error code: 401` en la consola:
+Si ves un error `⚠️ [IA] Error en limpieza con Groq` en la consola:
 1. Verifica que la variable `GROQ_API_KEY` en tu archivo `.env` sea correcta.
 2. Asegúrate de que tu clave no tenga espacios adicionales.
-3. El sistema entrará automáticamente en modo **Fallback** (Reglas Rígidas) si la IA falla, por lo que el OCR seguirá funcionando pero con menor precisión en formatos complejos.
+3. El sistema entrará automáticamente en modo **Fallback** (reglas rudas) si la IA falla, por lo que el OCR seguirá funcionando pero con menor precisión en formatos complejos.
 
 ---
 
@@ -199,12 +204,12 @@ Si ves un error `❌ [SkillEngine] Error en la llamada a Groq: Error code: 401` 
 Se ha implementado un flujo de tasa BCV con fallback: API + scraping + DB + env. Esta sección detalla los cambios recientes en el proyecto.
 
 ### Módulos clave
-- main.py: API principal, endpoints de subir-pago, pago-manual, ver-pagos, tasa-bcv, convertir-a-usd, clientes, auditoría, anti-duplicados.
+- main.py: API principal, endpoints de subir-pago, pago-manual, ver-pagos, tasa-bcv, convertir-a-usd, clientes, auditoría y anti-duplicados.
 - exchange.py: gestión de tasa BCV y conversión Bs/USD con fallback y persistencia en TasaCambio.
-- models.py: SQLAlchemy ORM para Cliente, Pago, PagoHistory, TasaCambio.
-- ocr_engine.py: extracción OCR + fallback con IA (SkillEngine) o reglas con bank_rules.
+- models.py: SQLAlchemy ORM para Cliente, Pago, PagoHistory y TasaCambio.
+- ocr_engine.py: extracción OCR con RapidOCR y limpieza semántica con Groq.
 - database.py: configuración SQLAlchemy y sesión.
-- skill_engine.py: interacción con servicio Groq (IA).
+- bank_rules/: reglas deterministas por banco y estrategia de detección.
 
 ### Endpoint de tasa BCV (nuevo / mejorado)
 - GET /tasa-bcv/ => devuelve tasa_bcv, fecha_consulta, origen, es_fallback.
