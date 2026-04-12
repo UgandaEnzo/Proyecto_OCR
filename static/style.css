@@ -268,17 +268,25 @@ a {
 .btn {
   border: none;
   border-radius: 0.75rem;
-  padding: 0.75rem 1rem;
+  padding: 0.58rem 0.92rem;
+  font-size: 0.95rem;
+  min-height: 2.3rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
   cursor: pointer;
   transition: transform 0.18s ease, background 0.18s ease, color 0.18s ease;
 }
 
 .btn:hover {
   transform: translateY(-1px);
+}
+
+.btn-small {
+  padding: 0.45rem 0.8rem;
+  font-size: 0.9rem;
+  min-height: 2rem;
 }
 
 .btn-primary {
@@ -462,6 +470,73 @@ a {
   padding: 1rem 1.25rem 1.25rem;
   overflow-y: auto;
   max-height: calc(92vh - 8rem);
+}
+
+.modal-xl {
+  width: min(100%, 1100px);
+}
+
+.gestion-tabs {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.gestion-tab {
+  padding: 0.75rem 1rem;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 0.75rem;
+  background: rgba(255,255,255,0.03);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.gestion-tab.active,
+.gestion-tab:hover {
+  background: rgba(126, 255, 184, 0.12);
+  border-color: rgba(126, 255, 184, 0.25);
+}
+
+.gestion-panel {
+  padding-top: 0.5rem;
+}
+
+.status-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.status-led {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 999px;
+  margin-top: 0.25rem;
+  background: rgba(255,255,255,0.2);
+  box-shadow: 0 0 0 0 rgba(0,0,0,0.2);
+}
+
+.status-led.led-on {
+  background: #7effb8;
+  box-shadow: 0 0 8px rgba(126,255,184,0.45);
+}
+
+.status-led.led-off {
+  background: rgba(255,255,255,0.28);
+}
+
+.gestion-actions {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.gestion-credentials {
+  border-top: 1px solid rgba(255,255,255,0.08);
+  padding-top: 1rem;
+  margin-top: 1rem;
 }
 
 .modal-footer {

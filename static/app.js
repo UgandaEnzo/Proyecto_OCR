@@ -34,6 +34,7 @@ createApp({
             editandoCliente: null,
             uploadBank: '',
             uploadError: '',
+            uploadFileSelected: false,
             procesandoSubida: false,
             manualItem: {
                 banco: '',
@@ -54,6 +55,16 @@ createApp({
             calcUsd: 0,
             cargandoHistorial: false,
             cargandoHistorialCliente: false,
+            showGestionModal: false,
+            gestionTab: 'ia',
+            gestionState: 'offline',
+            gestionApiKey: '',
+            gestionDbInfo: '',
+            gestionDbMessage: '',
+            gestionAdminUser: '',
+            gestionAdminPass: '',
+            gestionClientesTotal: 0,
+            gestionUltimosClientes: [],
         };
     },
     computed: {
@@ -182,11 +193,16 @@ createApp({
             }
             this.uploadError = '';
             this.uploadBank = '';
+            this.uploadFileSelected = false;
             this.showUploadModal = true;
+        },
+        onUploadFileChange(event) {
+            this.uploadFileSelected = event.target.files && event.target.files.length > 0;
         },
         closeUploadModal() {
             this.showUploadModal = false;
             this.uploadError = '';
+            this.uploadFileSelected = false;
         },
         abrirModalManual() {
             this.editandoPagoId = null;
@@ -221,7 +237,10 @@ createApp({
             formData.set('banco', this.uploadBank);
             this.procesandoSubida = true;
             try {
-                const resp = await fetch('/subir-pago/', {
+                if (!formData.get('cliente_id')) {
+                formData.delete('cliente_id');
+            }
+            const resp = await fetch('/subir-pago/', {
                     method: 'POST',
                     headers: this.getAuthHeaders(),
                     body: formData,
@@ -232,7 +251,7 @@ createApp({
                     this.closeUploadModal();
                     await this.cargar(this.page);
                 } else {
-                    this.uploadError = data.error || 'Error al subir pago.';
+                    this.uploadError = data.detail || data.error || data.message || 'Error al subir pago.';
                 }
             } catch (err) {
                 this.uploadError = 'Error de red al subir pago.';
@@ -504,12 +523,203 @@ createApp({
             };
             return mapping[accion] || accion;
         },
-        promptApiKey() {
-            const nuevaKey = prompt('Ingrese su API key para IA:');
-            if (nuevaKey) {
-                localStorage.setItem('apiKeyConciliacion', nuevaKey);
-                this.showToast('API key guardada localmente', 'success');
+        async abrirGestion() {
+            this.showGestionModal = true;
+            this.gestionTab = 'ia';
+            await this.cargarGestionStatus();
+            await this.cargarCredenciales();
+            await this.cargarGestionClientesSummary();
+        },
+        closeGestionModal() {
+            this.showGestionModal = false;
+        },
+        async cargarGestionStatus() {
+            try {
+                const resp = await fetch('/gestion/ia/status');
+                const data = await resp.json();
+                this.gestionState = data.state || 'offline';
+                this.gestionApiKey = data.api_key || '';
+            } catch (err) {
+                this.showToast('No se pudo leer el estado de IA', 'warning');
             }
+            try {
+                const resp = await fetch('/gestion/db/status');
+                const data = await resp.json();
+                this.gestionDbInfo = data.info || data.database_type || data.path || 'No disponible';
+                this.gestionDbMessage = data.message || '';
+            } catch (err) {
+                this.gestionDbInfo = '';
+                this.gestionDbMessage = 'No se pudo leer el estado de la base de datos.';
+            }
+        },
+        async cargarCredenciales() {
+            try {
+                const resp = await fetch('/gestion/db/credentials');
+                const data = await resp.json();
+                this.gestionAdminUser = data.admin_user || '';
+                this.gestionAdminPass = data.admin_pass || '';
+            } catch (err) {
+                this.showToast('No se pudo cargar las credenciales', 'warning');
+            }
+        },
+        async guardarGestionApiKey() {
+            if (!this.gestionApiKey.trim()) {
+                this.showToast('Debes ingresar una clave Groq válida', 'warning');
+                return;
+            }
+            try {
+                const resp = await fetch('/gestion/ia/key', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ api_key: this.gestionApiKey.trim() }),
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    this.showToast(data.mensaje || 'Clave Groq guardada', 'success');
+                    this.gestionState = 'online';
+                } else {
+                    this.showToast(data.detail || 'No se pudo guardar la clave Groq', 'danger');
+                }
+            } catch (err) {
+                this.showToast('Error al guardar la clave Groq', 'danger');
+            }
+        },
+        async exportarPagosCsv() {
+            try {
+                const resp = await fetch('/gestion/db/export-pagos');
+                if (!resp.ok) throw new Error('No se pudo exportar pagos.');
+                const blob = await resp.blob();
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = 'pagos_export.csv';
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                this.showToast('Pagos exportados', 'success');
+            } catch (err) {
+                this.showToast(err.message || 'Error al exportar pagos', 'danger');
+            }
+        },
+        async importarPagosCsv(event) {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            if (!file.name.toLowerCase().endsWith('.csv')) {
+                this.showToast('Solo se permiten archivos .csv', 'warning');
+                return;
+            }
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+                const resp = await fetch('/gestion/db/import-pagos', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    this.showToast(data.mensaje || 'Pagos importados', 'success');
+                } else {
+                    this.showToast(data.detail || 'Error al importar pagos', 'danger');
+                }
+            } catch (err) {
+                this.showToast('Error al importar pagos', 'danger');
+            } finally {
+                event.target.value = '';
+            }
+        },
+        async limpiarDatosPrueba() {
+            if (!confirm('Deseas borrar los pagos de prueba y no verificados?')) return;
+            try {
+                const resp = await fetch('/gestion/db/clear-test-data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ confirm: true }),
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    this.showToast(data.mensaje || 'Datos de prueba eliminados', 'success');
+                } else {
+                    this.showToast(data.detail || 'Error al limpiar datos', 'danger');
+                }
+            } catch (err) {
+                this.showToast('Error al limpiar datos de prueba', 'danger');
+            }
+        },
+        async guardarCredenciales() {
+            if (!this.gestionAdminUser.trim() || !this.gestionAdminPass.trim()) {
+                this.showToast('Usuario y contraseña admin son obligatorios', 'warning');
+                return;
+            }
+            try {
+                const resp = await fetch('/gestion/db/credentials', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ admin_user: this.gestionAdminUser.trim(), admin_pass: this.gestionAdminPass.trim() }),
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    this.showToast(data.mensaje || 'Credenciales guardadas', 'success');
+                } else {
+                    this.showToast(data.detail || 'Error al guardar credenciales', 'danger');
+                }
+            } catch (err) {
+                this.showToast('Error al guardar credenciales', 'danger');
+            }
+        },
+        async exportarClientesCsv() {
+            try {
+                const resp = await fetch('/gestion/clientes/export');
+                if (!resp.ok) throw new Error('No se pudo exportar clientes.');
+                const blob = await resp.blob();
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = 'clientes_export.csv';
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                this.showToast('Clientes exportados', 'success');
+            } catch (err) {
+                this.showToast(err.message || 'Error al exportar clientes', 'danger');
+            }
+        },
+        async importarClientes(event) {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            if (!file.name.toLowerCase().endsWith('.csv')) {
+                this.showToast('Solo se permiten archivos .csv', 'warning');
+                return;
+            }
+            const formData = new FormData();
+            formData.append('archivo', file);
+            try {
+                const resp = await fetch('/gestion/clientes/import', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    this.showToast(data.mensaje || 'Clientes importados', 'success');
+                    await this.cargarGestionClientesSummary();
+                } else {
+                    this.showToast(data.detail || 'Error al importar clientes', 'danger');
+                }
+            } catch (err) {
+                this.showToast('Error al importar clientes', 'danger');
+            } finally {
+                event.target.value = '';
+            }
+        },
+        async cargarGestionClientesSummary() {
+            try {
+                const resp = await fetch('/gestion/clientes/summary');
+                const data = await resp.json();
+                this.gestionClientesTotal = data.total || 0;
+                this.gestionUltimosClientes = data.ultimos || [];
+            } catch (err) {
+                this.showToast('No se pudo cargar el resumen de clientes', 'warning');
+            }
+        },
+        promptApiKey() {
+            this.abrirGestion();
         },
         getAuthHeaders() {
             const apiKey = localStorage.getItem('apiKeyConciliacion');

@@ -17,7 +17,11 @@
             Sistema de Conciliación
         </h1>
         <div class="page-actions">
-            <button class="btn btn-outline-light" @click="promptApiKey" title="Configurar API Key">
+            <button class="btn btn-outline-light" @click="abrirGestion" title="Panel de Gestión">
+                <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a2 2 0 0 1 2 2v1.2a7 7 0 0 1 2.4 1.4l0.8-0.8a2 2 0 0 1 2.8 2.8l-0.8 0.8a7 7 0 0 1 1.4 2.4H20a2 2 0 1 1 0 4h-1.2a7 7 0 0 1-1.4 2.4l0.8 0.8a2 2 0 0 1-2.8 2.8l-0.8-0.8a7 7 0 0 1-2.4 1.4V20a2 2 0 1 1-4 0v-1.2a7 7 0 0 1-2.4-1.4l-0.8 0.8a2 2 0 0 1-2.8-2.8l0.8-0.8a7 7 0 0 1-1.4-2.4H4a2 2 0 1 1 0-4h1.2a7 7 0 0 1 1.4-2.4l-0.8-0.8a2 2 0 1 1 2.8-2.8l0.8 0.8A7 7 0 0 1 10 5.2V4a2 2 0 0 1 2-2z" fill="currentColor"/></svg>
+                Gestión
+            </button>
+            <button class="btn btn-outline-light" @click="abrirGestion" title="Configurar API Key">
                 <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a5 5 0 0 1 5 5v3.5a5 5 0 0 1 1.7 3.8 5 5 0 1 1-10 0A5 5 0 0 1 7 10.5V7a5 5 0 0 1 5-5zm1 16.9V21h-2v-2.1a7.002 7.002 0 0 1-6-6.9h2a5 5 0 0 0 10 0h2a7.002 7.002 0 0 1-6 6.9z" fill="currentColor"/></svg>
                 Configurar API
             </button>
@@ -253,6 +257,97 @@
 
     <div id="toastContainer" class="toast-container"></div>
 
+    <div v-if="showGestionModal" class="modal-overlay" @click.self="closeGestionModal">
+        <div class="modal-window modal-xl">
+            <div class="modal-header">
+                <h5 class="modal-title">Gestión del Sistema</h5>
+                <button class="btn-close" @click="closeGestionModal">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="gestion-tabs">
+                    <button class="gestion-tab" :class="{ active: gestionTab === 'ia' }" @click="gestionTab = 'ia'">IA / API</button>
+                    <button class="gestion-tab" :class="{ active: gestionTab === 'db' }" @click="gestionTab = 'db'">Base de Datos</button>
+                    <button class="gestion-tab" :class="{ active: gestionTab === 'clientes' }" @click="gestionTab = 'clientes'">Clientes</button>
+                </div>
+
+                <div v-if="gestionTab === 'ia'" class="gestion-panel">
+                    <div class="status-row">
+                        <span class="status-led" :class="{ 'led-on': gestionState === 'online', 'led-off': gestionState !== 'online' }"></span>
+                        <div>
+                            <strong>Estado Groq API:</strong> {{ gestionState === 'online' ? 'Activa' : gestionState === 'invalid_key' ? 'No configurada' : 'No disponible' }}
+                            <p class="text-muted">{{ gestionState === 'online' ? 'La clave está disponible para procesamiento local.' : (gestionState === 'invalid_key' ? 'Configura la clave para habilitar IA y llamadas locales.' : 'No hay conexión a Groq o la clave no es accesible.') }}</p>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Clave Groq</label>
+                        <input type="text" class="form-control" v-model="gestionApiKey" placeholder="Ingresa tu clave Groq aquí">
+                    </div>
+                    <button class="btn btn-primary" @click="guardarGestionApiKey">Guardar Clave Groq</button>
+                </div>
+
+                <div v-if="gestionTab === 'db'" class="gestion-panel">
+                    <div class="gestion-actions">
+                        <button class="btn btn-info" type="button" @click="exportarPagosCsv">Exportar Pagos CSV</button>
+                        <label class="form-label mt-3">Importar Pagos (.csv)</label>
+                        <input type="file" class="form-control" @change="importarPagosCsv" accept=".csv">
+                        <button class="btn btn-warning mt-2" type="button" @click="limpiarDatosPrueba">Limpiar Datos de Prueba</button>
+                    </div>
+                    <div class="gestion-credentials mt-4">
+                        <h6>Credenciales Administrativas</h6>
+                        <div class="mb-3">
+                            <label class="form-label">Usuario</label>
+                            <input type="text" class="form-control" v-model="gestionAdminUser" placeholder="admin">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Contraseña</label>
+                            <input type="password" class="form-control" v-model="gestionAdminPass" placeholder="••••••">
+                        </div>
+                        <button class="btn btn-primary" type="button" @click="guardarCredenciales">Guardar Credenciales</button>
+                    </div>
+                    <div class="mt-4 text-muted small">
+                        <p><strong>Base de datos:</strong> {{ gestionDbInfo || 'No disponible' }}</p>
+                        <p>{{ gestionDbMessage }}</p>
+                    </div>
+                </div>
+
+                <div v-if="gestionTab === 'clientes'" class="gestion-panel">
+                    <div class="gestion-actions">
+                        <button class="btn btn-success" type="button" @click="exportarClientesCsv">Exportar Clientes CSV</button>
+                        <label class="form-label mt-3">Importar Clientes (.csv)</label>
+                        <input type="file" class="form-control" @change="importarClientes" accept=".csv">
+                    </div>
+                    <div class="mt-4">
+                        <p><strong>Total de clientes:</strong> {{ gestionClientesTotal }}</p>
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Nombre</th>
+                                        <th>Cédula</th>
+                                        <th>Teléfono</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-if="!gestionUltimosClientes.length">
+                                        <td colspan="3" class="text-center text-muted">No hay clientes recientes.</td>
+                                    </tr>
+                                    <tr v-for="cliente in gestionUltimosClientes" :key="cliente.cedula || cliente.nombre">
+                                        <td>{{ cliente.nombre }}</td>
+                                        <td>{{ cliente.cedula }}</td>
+                                        <td>{{ cliente.telefono }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @click="closeGestionModal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
     <div v-if="showUploadModal" class="modal-overlay" @click.self="closeUploadModal">
         <div class="modal-window">
             <div class="modal-header">
@@ -264,7 +359,7 @@
                 <form id="uploadForm">
                     <div class="mb-3">
                         <label class="form-label">Selecciona la imagen del pago</label>
-                        <input class="form-control" type="file" name="file" accept="image/*">
+                        <input class="form-control" type="file" name="file" accept="image/*" @change="onUploadFileChange" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Banco <span class="text-danger">*</span></label>
@@ -284,7 +379,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" @click="closeUploadModal">Cancelar</button>
-                <button class="btn btn-primary" @click="subirPago" :disabled="!uploadBank || procesandoSubida">
+                <button class="btn btn-primary" @click="subirPago" :disabled="!uploadBank || !uploadFileSelected || procesandoSubida">
                     <span v-if="procesandoSubida" class="spinner"></span>
                     {{ procesandoSubida ? ' Procesando...' : 'Subir y Procesar' }}
                 </button>
@@ -326,7 +421,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" @click="closeManualModal">Cancelar</button>
-                <button class="btn btn-primary" @click="guardarManual" :disabled="!manualItem.banco || !manualItem.referencia || !manualItem.monto">Guardar</button>
+                <button class="btn btn-primary" @click="guardarManual" :disabled="!manualItem.banco || !manualItem.referencia || !manualItem.monto || manualItem.monto <= 0">Guardar</button>
             </div>
         </div>
     </div>

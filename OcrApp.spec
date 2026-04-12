@@ -25,6 +25,7 @@ hidden_imports = [
     'jinja2',
     'psycopg2',
     'sqlalchemy',
+    'dotenv',
 ] + rapidocr_hiddenimports
 
 a = Analysis(

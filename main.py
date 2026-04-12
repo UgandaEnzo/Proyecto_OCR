@@ -1,3 +1,4 @@
+import csv
 import os
 import sys
 import shutil
@@ -6,10 +7,12 @@ import logging
 import hashlib
 import traceback
 import io
+import tempfile
+import sqlite3
 from enum import Enum
 from pathlib import Path
 from typing import Optional, List
-from dotenv import load_dotenv
+from dotenv import load_dotenv, set_key
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Header, Body
@@ -17,7 +20,8 @@ from fastapi.responses import JSONResponse, FileResponse, Response, RedirectResp
 from fastapi.staticfiles import StaticFiles
 from logging.handlers import RotatingFileHandler
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, desc, exc as sa_exc, inspect, text
+from sqlalchemy import func, desc, exc as sa_exc, inspect, text, or_
+from sqlalchemy.engine.url import make_url
 from datetime import datetime, timedelta
 from pydantic import BaseModel, field_validator
 
@@ -34,7 +38,7 @@ uploads_dir.mkdir(parents=True, exist_ok=True)
 static_dir.mkdir(parents=True, exist_ok=True)
 
 # Importamos tus módulos (ahora database.py es más robusto)
-from database import engine, get_db, Base
+from database import engine, get_db, Base, SQLALCHEMY_DATABASE_URL
 import models
 import ocr_engine  # Tu motor de OCR
 import bank_rules
@@ -266,6 +270,16 @@ class ConversionResponse(BaseModel):
     origen: str
     es_fallback: bool = False
 
+class GestionApiKey(BaseModel):
+    api_key: str
+
+class GestionCredentials(BaseModel):
+    admin_user: str
+    admin_pass: str
+
+class ConfirmBody(BaseModel):
+    confirm: bool
+
 class TasaBCVUpdate(BaseModel):
     tasa_bcv: float
 
@@ -283,6 +297,40 @@ def registrar_auditoria(db: Session, pago_id: int, accion: str, detalles: str):
     )
     db.add(nuevo_historial)
     db.commit()
+
+
+def _get_env_path() -> Path:
+    return base_dir / '.env'
+
+
+def _update_env_variable(key: str, value: str):
+    env_path = _get_env_path()
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    set_key(str(env_path), key, value)
+    os.environ[key] = value
+    return True
+
+
+def _get_database_type() -> str:
+    url = SQLALCHEMY_DATABASE_URL.lower()
+    if url.startswith('sqlite://'):
+        return 'sqlite'
+    if url.startswith('postgresql://') or url.startswith('postgres://'):
+        return 'postgresql'
+    return 'unsupported'
+
+
+def _get_sqlite_db_path() -> Optional[Path]:
+    if _get_database_type() != 'sqlite':
+        return None
+    if SQLALCHEMY_DATABASE_URL.startswith('sqlite:///'):
+        sqlite_path = SQLALCHEMY_DATABASE_URL.replace('sqlite:///', '', 1)
+        return Path(sqlite_path).resolve()
+    if SQLALCHEMY_DATABASE_URL.startswith('sqlite://'):
+        sqlite_path = SQLALCHEMY_DATABASE_URL.replace('sqlite://', '', 1)
+        return Path(sqlite_path).resolve()
+    return None
+
 
 # --- RUTAS ---
 
@@ -510,6 +558,254 @@ async def obtener_tasa_bcv_endpoint(db: Session = Depends(get_db)):
 @app.get("/bancos/")
 def listar_bancos():
     return {"bancos": bank_rules.get_available_banks()}
+
+def _verificar_estado_groq(api_key: str) -> tuple[bool, str]:
+    if not api_key:
+        return False, "No se ha configurado la clave Groq."
+
+    try:
+        from groq import Groq
+        client = Groq(api_key=api_key, timeout=3.0)
+        # Realiza una llamada mínima al servicio para verificar conectividad.
+        client.chat.completions.create(
+            messages=[{"role": "user", "content": "Responde con pong"}],
+            model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+            temperature=0.0,
+            max_tokens=1,
+            timeout=3.0,
+        )
+        return True, "Clave Groq cargada y verificada."
+    except Exception as e:
+        logger.warning("No se pudo verificar Groq API: %s", e)
+        return False, "No se puede conectar a Groq. Comprueba tu conexión a internet y la clave de API."
+
+@app.get("/gestion/ia/status")
+def estado_groq_api():
+    api_key = os.getenv("GROQ_API_KEY", "").strip()
+    online, message = _verificar_estado_groq(api_key)
+    state = "online" if online else ("invalid_key" if not api_key else "offline")
+    return {
+        "state": state,
+        "api_key": api_key,
+        "message": message
+    }
+
+@app.post("/gestion/ia/key")
+def guardar_groq_api_key(data: GestionApiKey):
+    api_key = data.api_key.strip()
+    if not api_key:
+        raise HTTPException(status_code=400, detail="La clave de Groq no puede estar vacía.")
+
+    _update_env_variable("GROQ_API_KEY", api_key)
+    online, message = _verificar_estado_groq(api_key)
+    state = "online" if online else "offline"
+    return {"mensaje": "Clave Groq guardada correctamente.", "state": state, "message": message}
+
+@app.get("/gestion/db/status")
+def estado_db():
+    db_type = _get_database_type()
+    if db_type == 'sqlite':
+        db_path = _get_sqlite_db_path()
+        return {
+            "database_type": "sqlite",
+            "path": str(db_path) if db_path else None,
+            "exists": bool(db_path and db_path.exists()),
+            "message": "SQLite local detectada. Importación de .db disponible."
+        }
+    if db_type == 'postgresql':
+        return {
+            "database_type": "postgresql",
+            "message": "PostgreSQL detectada. No hay archivo SQLite local. Solo la importación de pagos CSV está disponible.",
+            "info": "PostgreSQL"
+        }
+    return {"database_type": "unsupported", "message": "Tipo de base de datos no soportado para gestión automática.", "info": "No disponible"}
+
+@app.get("/gestion/db/export-pagos")
+def exportar_pagos_csv(db: Session = Depends(get_db)):
+    pagos = db.query(models.Pago).order_by(models.Pago.id).all()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["id", "referencia", "banco", "banco_destino", "monto", "monto_usd", "tasa_momento", "tasa_cambio", "fecha_registro", "estado", "cliente_id", "cliente_nombre", "ruta_imagen"])
+    for pago in pagos:
+        writer.writerow([
+            pago.id,
+            pago.referencia,
+            pago.banco,
+            pago.banco_destino or "",
+            pago.monto,
+            pago.monto_usd,
+            pago.tasa_momento,
+            pago.tasa_cambio,
+            pago.fecha_registro.isoformat() if pago.fecha_registro else "",
+            pago.estado,
+            pago.cliente_id,
+            pago.cliente.nombre if pago.cliente else "",
+            pago.ruta_imagen or ""
+        ])
+    return Response(output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=pagos_export.csv"})
+
+@app.post("/gestion/db/import-pagos")
+def importar_pagos_csv(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    if not file.filename.lower().endswith('.csv'):
+        raise HTTPException(status_code=400, detail="El archivo debe ser CSV.")
+
+    contenido = file.file.read().decode('utf-8', errors='replace')
+    lector = csv.DictReader(io.StringIO(contenido))
+    creados = 0
+    actualizados = 0
+    omitidos = 0
+    for fila in lector:
+        referencia = (fila.get('referencia') or fila.get('Referencia') or '').strip()
+        banco = (fila.get('banco') or fila.get('Banco') or '').strip()
+        monto_texto = (fila.get('monto') or fila.get('Monto') or '').strip()
+        if not referencia or not banco or not monto_texto:
+            omitidos += 1
+            continue
+        try:
+            monto = float(monto_texto.replace(',', '.'))
+        except ValueError:
+            omitidos += 1
+            continue
+
+        pago_existente = db.query(models.Pago).filter(
+            models.Pago.referencia == referencia,
+            models.Pago.banco == banco
+        ).first()
+        if pago_existente:
+            omitidos += 1
+            continue
+
+        cliente = None
+        cedula = (fila.get('cliente_cedula') or fila.get('cedula') or fila.get('Cedula') or '').strip()
+        nombre_cliente = (fila.get('cliente_nombre') or fila.get('cliente') or fila.get('Cliente') or '').strip()
+        telefono = (fila.get('telefono') or fila.get('Telefono') or fila.get('telefono_cliente') or '').strip()
+        if cedula:
+            cliente = db.query(models.Cliente).filter(models.Cliente.cedula == cedula).first()
+            if not cliente and nombre_cliente:
+                cliente = models.Cliente(nombre=nombre_cliente, cedula=cedula, telefono=telefono or None)
+                db.add(cliente)
+                db.flush()
+
+        fecha_registro = None
+        fecha_texto = (fila.get('fecha_registro') or fila.get('fecha') or fila.get('Fecha') or '').strip()
+        if fecha_texto:
+            for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
+                try:
+                    fecha_registro = datetime.strptime(fecha_texto, fmt)
+                    break
+                except ValueError:
+                    continue
+
+        monto_usd_texto = (fila.get('monto_usd') or fila.get('Monto_USD') or fila.get('montoUsd') or '').strip()
+        tasa_momento_texto = (fila.get('tasa_momento') or fila.get('Tasa_Momento') or '').strip()
+        tasa_cambio_texto = (fila.get('tasa_cambio') or fila.get('Tasa_Cambio') or '').strip()
+        estado = (fila.get('estado') or fila.get('Estado') or 'no_verificado').strip() or 'no_verificado'
+        banco_destino = (fila.get('banco_destino') or fila.get('Banco_Destino') or '').strip() or None
+        ruta_imagen = (fila.get('ruta_imagen') or fila.get('Ruta_Imagen') or '').strip() or None
+
+        def parse_float(valor, fallback=None):
+            if not valor:
+                return fallback
+            try:
+                return float(valor.replace(',', '.'))
+            except ValueError:
+                return fallback
+
+        pago = models.Pago(
+            referencia=referencia,
+            banco=banco,
+            banco_destino=banco_destino,
+            monto=monto,
+            monto_usd=parse_float(monto_usd_texto, 0.0),
+            tasa_momento=parse_float(tasa_momento_texto, 1.0),
+            tasa_cambio=parse_float(tasa_cambio_texto, 1.0),
+            fecha_registro=fecha_registro,
+            ruta_imagen=ruta_imagen,
+            estado=estado,
+            cliente_id=cliente.id if cliente else None,
+        )
+        db.add(pago)
+        creados += 1
+
+    db.commit()
+    return {
+        "mensaje": f"Pagos importados: {creados}, omitidos: {omitidos}.",
+        "creados": creados,
+        "omitidos": omitidos
+    }
+
+@app.post("/gestion/db/clear-test-data")
+def limpiar_datos_prueba(data: ConfirmBody, db: Session = Depends(get_db)):
+    if not data.confirm:
+        raise HTTPException(status_code=400, detail="Se requiere confirmación para borrar datos de prueba.")
+    pagos = db.query(models.Pago).filter(
+        or_(
+            models.Pago.estado == 'no_verificado',
+            models.Pago.referencia.ilike('%test%')
+        )
+    ).all()
+    deleted = len(pagos)
+    for pago in pagos:
+        db.delete(pago)
+    db.commit()
+    return {"mensaje": f"{deleted} pagos de prueba eliminados correctamente."}
+
+@app.get("/gestion/db/credentials")
+def obtener_credenciales():
+    return {
+        "admin_user": os.getenv("ADMIN_USER", ""),
+        "admin_pass": os.getenv("ADMIN_PASS", "")
+    }
+
+@app.post("/gestion/db/credentials")
+def guardar_credenciales(data: GestionCredentials):
+    _update_env_variable("ADMIN_USER", data.admin_user.strip())
+    _update_env_variable("ADMIN_PASS", data.admin_pass.strip())
+    return {"mensaje": "Credenciales guardadas correctamente."}
+
+@app.get("/gestion/clientes/export")
+def exportar_clientes_csv(db: Session = Depends(get_db)):
+    clientes = db.query(models.Cliente).order_by(models.Cliente.id).all()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["nombre", "cedula", "telefono"])
+    for cliente in clientes:
+        writer.writerow([cliente.nombre, cliente.cedula, cliente.telefono or ""])
+    return Response(output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=clientes_export.csv"})
+
+@app.post("/gestion/clientes/import")
+def importar_clientes(archivo: UploadFile = File(...), db: Session = Depends(get_db)):
+    if not archivo.filename.lower().endswith('.csv'):
+        raise HTTPException(status_code=400, detail="El archivo debe ser CSV.")
+    contenido = archivo.file.read().decode('utf-8', errors='replace')
+    lector = csv.DictReader(io.StringIO(contenido))
+    creados = 0
+    actualizados = 0
+    for fila in lector:
+        nombre = (fila.get('nombre') or fila.get('Nombre') or '').strip()
+        cedula = (fila.get('cedula') or fila.get('Cédula') or fila.get('cedula') or '').strip()
+        telefono = (fila.get('telefono') or fila.get('Telefono') or fila.get('teléfono') or '').strip()
+        if not nombre or not cedula:
+            continue
+        existente = db.query(models.Cliente).filter(models.Cliente.cedula == cedula).first()
+        if existente:
+            existente.nombre = nombre
+            existente.telefono = telefono
+            actualizados += 1
+        else:
+            db.add(models.Cliente(nombre=nombre, cedula=cedula, telefono=telefono))
+            creados += 1
+    db.commit()
+    return {"mensaje": f"Clientes importados: {creados}, actualizados: {actualizados}", "creados": creados, "actualizados": actualizados}
+
+@app.get("/gestion/clientes/summary")
+def resumen_clientes(db: Session = Depends(get_db)):
+    total = db.query(models.Cliente).count()
+    ultimos = db.query(models.Cliente).order_by(desc(models.Cliente.id)).limit(5).all()
+    return {
+        "total": total,
+        "ultimos": [{"nombre": c.nombre, "cedula": c.cedula, "telefono": c.telefono or ""} for c in ultimos]
+    }
 
 @app.post("/tasa-bcv/")
 def set_tasa_bcv(data: TasaBCVUpdate, db: Session = Depends(get_db), x_api_key: Optional[str] = Header(None)):
@@ -893,9 +1189,9 @@ def obtener_reportes(tipo_reporte: str = "mensual", start_date: Optional[datetim
 # --- 1. RUTA PARA SUBIR IMAGEN (Corrección para que funcione el botón) ---
 @app.post("/subir-pago/")
 async def subir_pago(
-    file: UploadFile = File(...), 
+    file: UploadFile = File(...),
     banco: str = Form(...),
-    cliente_id: Optional[int] = Form(None),
+    cliente_id: Optional[str] = Form(None),
     comentario: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     # --- MEJORA: Seguridad con API Key ---
@@ -904,6 +1200,13 @@ async def subir_pago(
     # --- MEJORA: Endpoint mucho más robusto ---
     filepath = None
     try:
+        if cliente_id == "":
+            cliente_id = None
+        elif cliente_id is not None:
+            try:
+                cliente_id = int(cliente_id)
+            except ValueError:
+                raise HTTPException(status_code=422, detail="cliente_id debe ser un entero válido o vacío.")
         # 1. Validaciones y guardado seguro
         if not file.content_type or not file.content_type.startswith("image/"):
             raise HTTPException(status_code=400, detail="Solo se permiten archivos de imagen.")

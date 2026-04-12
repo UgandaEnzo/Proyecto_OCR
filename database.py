@@ -11,8 +11,15 @@ try:
     from dotenv import load_dotenv
 
     base_dir = Path(sys.executable if getattr(sys, 'frozen', False) else __file__).resolve().parent
-    dotenv_path = base_dir / '.env'
-    if dotenv_path.exists():
+    dotenv_path = None
+    search_dirs = [base_dir, base_dir.parent, base_dir.parent.parent]
+    for directory in search_dirs:
+        candidate = directory / '.env'
+        if candidate.exists():
+            dotenv_path = candidate
+            break
+
+    if dotenv_path:
         load_dotenv(dotenv_path=dotenv_path)
     else:
         load_dotenv()

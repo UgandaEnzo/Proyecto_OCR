@@ -142,6 +142,9 @@ Puedes empaquetar esta aplicación en un único archivo ejecutable para distribu
     py setup_project.py
     ```
 
+    El script `setup_project.py` instala automáticamente las dependencias de producción y desarrollo necesarias, crea un entorno virtual de empaquetado y ejecuta PyInstaller.
+    El archivo `run.py` carga el `.env` automáticamente cuando se ejecuta desde el ejecutable.
+
     Si prefieres usar PyInstaller directamente, puedes ejecutar:
 
     ```bash
