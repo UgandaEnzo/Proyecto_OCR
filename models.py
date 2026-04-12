@@ -24,6 +24,7 @@ class Pago(Base):
     banco_destino = Column(String, nullable=True) # Ej: Banesco
     monto = Column(Float)                   # Ej: 100.50
     monto_usd = Column(Float, nullable=True, default=0.0)
+    tasa_momento = Column(Float, nullable=True, default=1.0)
     tasa_cambio = Column(Float, nullable=True, default=1.0)
     fecha_registro = Column(DateTime(timezone=True), server_default=func.now())
     ruta_imagen = Column(String)            # Guardamos dónde quedó la foto

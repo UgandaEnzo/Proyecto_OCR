@@ -11,15 +11,14 @@ from pathlib import Path
 from typing import Optional, List
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
-import requests
 
 from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Header, Body
 from fastapi.responses import JSONResponse, FileResponse, Response, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from logging.handlers import RotatingFileHandler
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, desc, exc as sa_exc, text
-from datetime import datetime
+from sqlalchemy import func, desc, exc as sa_exc, inspect, text
+from datetime import datetime, timedelta
 from pydantic import BaseModel, field_validator
 
 from exchange import get_tasa_bcv, convertir_payments, TasaNoDisponibleError
@@ -28,6 +27,11 @@ from exchange import get_tasa_bcv, convertir_payments, TasaNoDisponibleError
 base_dir = Path(sys.executable if getattr(sys, 'frozen', False) else __file__).resolve().parent
 dotenv_path = base_dir / '.env'
 load_dotenv(dotenv_path=dotenv_path)
+
+uploads_dir = base_dir / 'uploads'
+static_dir = base_dir / 'static'
+uploads_dir.mkdir(parents=True, exist_ok=True)
+static_dir.mkdir(parents=True, exist_ok=True)
 
 # Importamos tus módulos (ahora database.py es más robusto)
 from database import engine, get_db, Base
@@ -67,6 +71,13 @@ async def lifespan(app: FastAPI):
     """Maneja el inicio y cierre de la aplicación de forma segura."""
     try:
         Base.metadata.create_all(bind=engine)
+        inspector = inspect(engine)
+        if "pagos" in inspector.get_table_names():
+            columnas_pagos = [col["name"] for col in inspector.get_columns("pagos")]
+            if "tasa_momento" not in columnas_pagos:
+                with engine.begin() as conn:
+                    conn.execute(text('ALTER TABLE pagos ADD COLUMN tasa_momento FLOAT'))
+                logger.info("Se agregó la columna 'tasa_momento' en la tabla pagos.")
         logger.info("Sistema de Base de Datos inicializado: Tablas verificadas.")
         
         logger.info("🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)")
@@ -100,14 +111,13 @@ def handle_db_unicode_decode_error(request, exc):
     )
 
 # Montar carpetas estáticas
-os.makedirs("uploads", exist_ok=True)
-app.mount("/static", StaticFiles(directory="static"), name="static")
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 
 # --- RUTA PARA FAVICON ---
 @app.get('/favicon.ico', include_in_schema=False)
 async def favicon():
-    favicon_path = os.path.join("static", "favicon.ico")
+    favicon_path = str(static_dir / "favicon.ico")
     if os.path.exists(favicon_path):
         return FileResponse(favicon_path)
     else:
@@ -178,11 +188,13 @@ class PagoResponse(BaseModel):
     banco_destino: Optional[str] = None
     monto: float
     monto_usd: Optional[float] = None
+    tasa_momento: Optional[float] = None
     tasa_cambio: Optional[float] = None
     fecha_registro: datetime
     estado: str
     cliente_id: Optional[int] = None
     cliente: Optional[Cliente] = None
+    ruta_imagen: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -221,6 +233,27 @@ class PagoManual(BaseModel):
     referencia: str
     monto: float
     cliente_id: Optional[int] = None
+
+    @field_validator('banco', 'referencia', mode='before')
+    def validar_texto_requerido(cls, valor, info):
+        if isinstance(valor, str):
+            valor = valor.strip()
+        if not valor:
+            field_name = info.field_name.capitalize()
+            raise ValueError(f"{field_name} es obligatorio y no puede estar vacío.")
+        return valor
+
+    @field_validator('monto')
+    def validar_monto(cls, valor):
+        if valor is None:
+            raise ValueError("El monto es obligatorio y debe ser un número mayor a cero.")
+        try:
+            monto = float(valor)
+        except (TypeError, ValueError):
+            raise ValueError("El monto debe ser un número válido mayor a cero.")
+        if monto <= 0:
+            raise ValueError("El monto debe ser mayor a cero.")
+        return monto
 
 class ConversionRequest(BaseModel):
     monto_bs: float
@@ -344,41 +377,98 @@ async def consultar_datos_ia(query: ChatQuery, db: Session = Depends(get_db)):
     """Permite hacer preguntas sobre los pagos en lenguaje natural."""
     # 1. Consultas rápidas para contexto de negocio
     total_clientes = db.query(models.Cliente).count()
-    
+    total_pagos = db.query(models.Pago).count()
+    total_historial = db.query(models.PagoHistory).count()
+
+    # Distribución de pagos por estado
+    pagos_por_estado = db.query(
+        models.Pago.estado,
+        func.count(models.Pago.id).label('conteo'),
+        func.sum(models.Pago.monto).label('total_monto')
+    ).group_by(models.Pago.estado).all()
+    contexto_por_estado = "\n".join([
+        f"- {estado}: {conteo} pagos, total {total_monto or 0.0:,.2f} Bs"
+        for estado, conteo, total_monto in pagos_por_estado
+    ]) or "- Sin registros de pago por estado."
+
     # Mejor cliente (más pagos realizados)
     mejor_cliente = db.query(
-        models.Cliente.nombre, 
+        models.Cliente.nombre,
         func.count(models.Pago.id).label('total')
     ).join(models.Pago).group_by(models.Cliente.id).order_by(text('total DESC')).first()
     nombre_mejor = mejor_cliente.nombre if mejor_cliente else "N/A"
 
-    # Recaudación mes actual
+    # Recaudación reciente
     inicio_mes = datetime.now().replace(day=1, hour=0, minute=0, second=0)
     recaudado_mes = db.query(func.sum(models.Pago.monto)).filter(models.Pago.fecha_registro >= inicio_mes).scalar() or 0.0
-    
+    inicio_30_dias = datetime.now() - timedelta(days=30)
+    recaudado_30_dias = db.query(func.sum(models.Pago.monto)).filter(models.Pago.fecha_registro >= inicio_30_dias).scalar() or 0.0
+    inicio_60_dias = datetime.now() - timedelta(days=60)
+    recaudado_60_dias = db.query(func.sum(models.Pago.monto)).filter(models.Pago.fecha_registro >= inicio_60_dias).scalar() or 0.0
+
     # Últimos 5 pagos
     ultimos_pagos = db.query(models.Pago).order_by(desc(models.Pago.id)).limit(5).all()
     contexto_pagos = "\n".join([
-        f"- Ref: {p.referencia}, Banco: {p.banco}, Monto: {p.monto} Bs, Cliente: {p.cliente.nombre if p.cliente else 'Particular'}" 
+        f"- Ref: {p.referencia}, Banco: {p.banco}, Monto: {p.monto} Bs, Cliente: {p.cliente.nombre if p.cliente else 'Particular'}"
         for p in ultimos_pagos
-    ])
-    
+    ]) or "- No hay pagos recientes registrados."
+
+    # Últimas 5 acciones de historial
+    ultimas_acciones = db.query(models.PagoHistory).order_by(desc(models.PagoHistory.id)).limit(5).all()
+    contexto_historial = "\n".join([
+        f"- Pago ID: {h.pago_id}, Acción: {h.accion}, Usuario: {h.usuario or 'desconocido'}, Detalles: {h.detalles}"
+        for h in ultimas_acciones
+    ]) or "- No hay acciones de historial recientes."
+
+    # Última tasa BCV registrada
+    ultima_tasa = db.query(models.TasaCambio).order_by(desc(models.TasaCambio.fecha_actualizacion)).first()
+    tasa_bcv_texto = f"{ultima_tasa.monto_tasa:.4f} (actualizada {ultima_tasa.fecha_actualizacion})" if ultima_tasa else "No disponible"
+
+    total_usd_recaudado = db.query(func.sum(models.Pago.monto_usd)).scalar() or 0.0
+    tasa_promedio_pagos = db.query(func.avg(models.Pago.tasa_momento)).scalar() or 0.0
+    balance_total_bs = db.query(func.sum(models.Pago.monto)).scalar() or 0.0
+
     prompt = f"""
     Eres un asistente contable experto del Sistema de Conciliación.
-    DATOS ACTUALES DE LA BASE DE DATOS:
+    TABLAS Y ESQUEMA DISPONIBLES EN LA BASE DE DATOS:
+    - clientes(id, nombre, cedula, telefono)
+    - pagos(id, referencia, banco, banco_destino, monto, monto_usd, tasa_momento, tasa_cambio, fecha_registro, ruta_imagen, file_hash, estado, cliente_id)
+    - pagos_history(id, pago_id, accion, detalles, usuario, fecha)
+    - tasas_cambio(id, proveedor, monto_tasa, fecha_actualizacion)
+    RELACIONES:
+    - pago.cliente_id -> cliente.id
+    - un pago puede no tener cliente asociado
+
+    CONTEXTO AGREGADO:
     - Clientes totales: {total_clientes}
-    - Mejor cliente (frecuencia): {nombre_mejor}
+    - Pagos totales: {total_pagos}
+    - Registros de auditoría: {total_historial}
+    - Pagos por estado:\n{contexto_por_estado}
     - Total recaudado este mes: {recaudado_mes:,.2f} Bs.
-    
+    - Total recaudado último 30 días: {recaudado_30_dias:,.2f} Bs.
+    - Total recaudado últimos 60 días: {recaudado_60_dias:,.2f} Bs.
+    - Total recaudado en USD (sumatoria de monto_usd): {total_usd_recaudado:,.2f} USD.
+    - Tasa promedio de los últimos pagos: {tasa_promedio_pagos:.4f}.
+    - Balance total en Bs: {balance_total_bs:,.2f} Bs.
+    - Última tasa BCV registrada: {tasa_bcv_texto}
+    - Mejor cliente (frecuencia): {nombre_mejor}
+
     ÚLTIMOS 5 PAGOS REGISTRADOS:
     {contexto_pagos}
 
+    ÚLTIMAS 5 ACCIONES DE HISTORIAL:
+    {contexto_historial}
+
     INSTRUCCIONES:
-    Responde de forma breve y profesional. Si te preguntan sobre ingresos de hoy, usa los últimos pagos como referencia.
+    - Usa SOLO los datos proporcionados en este prompt.
+    - No inventes valores, no supongas pagos, clientes ni datos adicionales.
+    - Si no tienes información suficiente para responder, di "No hay suficiente información en los datos".
+    - Responde de forma breve y profesional.
+
     PREGUNTA DEL USUARIO:
     {query.pregunta}
     """
-    
+
     try:
         from groq import Groq
         client = Groq(api_key=os.getenv("GROQ_API_KEY"))
@@ -389,7 +479,7 @@ async def consultar_datos_ia(query: ChatQuery, db: Session = Depends(get_db)):
         )
         return {"respuesta": response.choices[0].message.content}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error en consulta IA: {e}")
+        return {"respuesta": "No fue posible procesar la consulta IA en este momento. Comprueba la configuración de GROQ_API_KEY y vuelve a intentarlo."}
 
 @app.post("/convertir-a-usd/", response_model=ConversionResponse)
 async def convertir_monto_a_usd(data: ConversionRequest, db: Session = Depends(get_db)):
@@ -526,6 +616,9 @@ def listar_pagos(banco: Optional[str] = None, page: int = 1, size: int = 10, db:
         query = query.filter(
             models.Pago.banco.ilike(termino)
         )
+
+    if page < 1:
+        page = 1
 
     skip = (page - 1) * size
     pagos = query.options(joinedload(models.Pago.cliente)).order_by(desc(models.Pago.id)).offset(skip).limit(size).all()
@@ -820,7 +913,7 @@ async def subir_pago(
 
         # Nombre de archivo sanitizado
         filename = f"{uuid.uuid4().hex}_{os.path.basename(file.filename)}"
-        filepath = os.path.join("uploads", filename)
+        filepath = str(uploads_dir / filename)
 
         # Guardado en streaming con límite de tamaño
         written_bytes = 0
@@ -895,6 +988,7 @@ async def subir_pago(
             ruta_imagen=filepath,
             file_hash=file_hash_str,
             cliente_id=cliente_id,
+            tasa_momento=tasa_actual,
             tasa_cambio=tasa_actual,
             monto_usd=monto_usd_calc
         )
@@ -955,6 +1049,13 @@ async def subir_pago(
 @app.post("/pago-manual/")
 async def crear_pago_manual(dato: PagoManual, db: Session = Depends(get_db)):
     try:
+        if not dato.banco.strip():
+            raise HTTPException(status_code=400, detail="El banco es obligatorio y debe ser un valor válido.")
+        if not dato.referencia.strip():
+            raise HTTPException(status_code=400, detail="La referencia es obligatoria y no puede estar vacía.")
+        if dato.monto <= 0:
+            raise HTTPException(status_code=400, detail="El monto debe ser un número mayor a cero.")
+
         # --- VALIDACIÓN ANTI-DUPLICADO MEJORADA ---
         pago_existente = db.query(models.Pago).filter(
             models.Pago.referencia == dato.referencia,
@@ -982,10 +1083,11 @@ async def crear_pago_manual(dato: PagoManual, db: Session = Depends(get_db)):
         nuevo_pago = models.Pago(
             referencia=dato.referencia,
             banco=banco_normalizado,
-            monto=dato.monto, 
+            monto=dato.monto,
             ruta_imagen="", # Vacío porque es manual
-            file_hash="MANUAL",
+            file_hash=None,
             cliente_id=dato.cliente_id,
+            tasa_momento=tasa_actual,
             tasa_cambio=tasa_actual,
             monto_usd=monto_usd_calc
         )
@@ -1003,6 +1105,43 @@ async def crear_pago_manual(dato: PagoManual, db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Error manual: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.patch("/pagos/{pago_id}", response_model=PagoResponse)
+async def actualizar_pago_manual(pago_id: int, datos: PagoManual, db: Session = Depends(get_db)):
+    pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
+    if not pago:
+        raise HTTPException(status_code=404, detail="Pago no encontrado")
+
+    if pago.ruta_imagen:
+        raise HTTPException(status_code=400, detail="Solo se pueden editar pagos manuales sin imagen.")
+
+    if not datos.banco or not datos.referencia or datos.monto is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Banco, referencia y monto son obligatorios. Asegúrate de completar todos los campos y que el monto sea mayor a cero."
+        )
+
+    pago.banco = datos.banco.strip()
+    pago.referencia = datos.referencia.strip()
+    pago.monto = datos.monto
+    pago.cliente_id = datos.cliente_id
+
+    tasa_info = await get_tasa_bcv(db)
+    nueva_tasa = float(tasa_info["tasa"])
+    pago.tasa_momento = nueva_tasa
+    pago.tasa_cambio = nueva_tasa
+    pago.monto_usd = round(datos.monto / nueva_tasa, 2) if nueva_tasa > 0 else 0.0
+
+    db.commit()
+    db.refresh(pago)
+
+    registrar_auditoria(
+        db,
+        pago_id=pago.id,
+        accion="update_manual",
+        detalles=f"Pago manual editado: ref {pago.referencia}, monto {pago.monto}, banco {pago.banco}"
+    )
+    return pago
 
 # --- 3. RUTA PARA RE-PROCESAR (Nueva) ---
 @app.post("/reprocesar/{pago_id}")
@@ -1075,6 +1214,44 @@ def obtener_historial(pago_id: int, db: Session = Depends(get_db)):
         models.PagoHistory.pago_id == pago_id
     ).order_by(desc(models.PagoHistory.id)).all()
     return historial
+
+@app.get("/pagos/{pago_id}/imagen")
+def obtener_imagen_pago(pago_id: int, db: Session = Depends(get_db)):
+    pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
+    if not pago:
+        raise HTTPException(status_code=404, detail="Pago no encontrado")
+    if not pago.ruta_imagen:
+        raise HTTPException(status_code=404, detail="Este pago no tiene imagen asociada")
+
+    filename = os.path.basename(pago.ruta_imagen)
+    if not filename:
+        raise HTTPException(status_code=404, detail="Ruta de imagen inválida")
+
+    return {"imagen_url": f"/uploads/{filename}"}
+
+@app.post("/pagos/{pago_id}/reprocesar")
+def reprocesar_pago_alias(pago_id: int, db: Session = Depends(get_db)):
+    return reprocesar_pago(pago_id, db)
+
+@app.post("/pagos/{pago_id}/estado")
+def cambiar_estado_pago_alias(pago_id: int, update_data: EstadoUpdate, db: Session = Depends(get_db)):
+    return cambiar_estado_pago(pago_id, update_data, db)
+
+@app.delete("/pagos/{pago_id}/")
+def eliminar_pago_por_id(pago_id: int, db: Session = Depends(get_db)):
+    pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
+    if not pago:
+        raise HTTPException(status_code=404, detail="Pago no encontrado")
+
+    if pago.ruta_imagen and os.path.exists(pago.ruta_imagen):
+        try:
+            os.remove(pago.ruta_imagen)
+        except Exception as e:
+            logger.warning(f"No se pudo eliminar el archivo físico {pago.ruta_imagen}: {e}")
+
+    db.delete(pago)
+    db.commit()
+    return {"mensaje": "Eliminado correctamente"}
 
 @app.delete("/eliminar-pago-ref/{referencia}")
 def eliminar_pago(referencia: str, confirm: bool = False, db: Session = Depends(get_db)):

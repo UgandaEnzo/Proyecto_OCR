@@ -23,7 +23,7 @@ El proyecto sigue principios **SOLID** y utiliza `Pydantic` para validación de 
 -   **Gestión de Clientes**: Directorio completo que permite buscar, registrar, editar y eliminar clientes, además de visualizar su historial de pagos individual.
 -   **Calculadora BCV**: Herramienta de conversión de moneda integrada que utiliza la tasa oficial del Banco Central de Venezuela con sistema de contingencia (fallback).
 -   **Auditoría**: Registra un historial de cambios para cada pago.
--   **Interfaz Web**: Panel de control interactivo construido con Vue.js y Bootstrap.
+-   **Interfaz Web**: Panel de control interactivo construido con Vue.js y estilos CSS locales.
 
 ## Estructura del Proyecto
 
@@ -134,8 +134,15 @@ Puedes empaquetar esta aplicación en un único archivo ejecutable para distribu
     pip install -r requirements-dev.txt
     ```
 
-3.  **Ejecutar PyInstaller:**
-    Desde la terminal, en la raíz del proyecto, ejecuta el siguiente comando. Este le indica a PyInstaller que cree un solo archivo (`--onefile`), le dé un nombre (`--name`), y que incluya los archivos necesarios de `static`.
+3.  **Ejecutar el empaquetado:**
+    La forma recomendada es usar el script de build incluido.
+
+    ```bash
+    python setup_project.py
+    py setup_project.py
+    ```
+
+    Si prefieres usar PyInstaller directamente, puedes ejecutar:
 
     ```bash
     # En Windows (usa ; como separador para --add-data)
@@ -145,6 +152,13 @@ Puedes empaquetar esta aplicación en un único archivo ejecutable para distribu
       --hidden-import numpy \
       --hidden-import openpyxl \
       --hidden-import reportlab \
+      --hidden-import groq \
+      --hidden-import fastapi \
+      --hidden-import starlette \
+      --hidden-import pydantic \
+      --hidden-import uvicorn \
+      --hidden-import httpx \
+      --hidden-import bs4 \
       --add-data "static;static" run.py
     ```
 
@@ -157,8 +171,8 @@ Puedes empaquetar esta aplicación en un único archivo ejecutable para distribu
 4.  **Encontrar el ejecutable:**
     Una vez que el proceso termine, encontrarás `OcrApp.exe` dentro de una nueva carpeta llamada `dist`. Puedes copiar este archivo a otra máquina, colocar un archivo `.env` configurado a su lado, y ejecutarlo. La carpeta `uploads/` se creará automáticamente al primer uso.
 
-5.  **Migraciones de Base de Datos (Alembic):**
-    Cuando realices cambios en los `models.py`, necesitarás generar y aplicar una migración.
+5.  **Migraciones de Base de Datos (Alembic - Opcional):**
+    El servidor principal ya valida y crea las tablas necesarias durante el arranque. Si necesitas versionar el esquema de manera explícita, utiliza Alembic.
 
     -   **Generar una nueva migración:**
         ```bash
@@ -168,7 +182,7 @@ Puedes empaquetar esta aplicación en un único archivo ejecutable para distribu
         ```bash
         alembic upgrade head
         ```
-    -   **Mantenimiento**: Las migraciones se manejan con `alembic` en la raíz del proyecto.
+    -   **Mantenimiento**: Las migraciones se manejan con `alembic` en la raíz del proyecto, pero el inicio automático del servidor es suficiente para cambios menores.
 ## Endpoints de la API
 
 La documentación interactiva de la API está disponible en `http://127.0.0.1:8000/api/docs`.
