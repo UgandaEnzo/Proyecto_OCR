@@ -403,8 +403,8 @@
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Referencia <span class="text-danger">*</span></label>
-                    <input type="text" class="form-control" v-model="manualItem.referencia" required>
-                    <div class="form-text">Debe ingresar la referencia del comprobante o transacción.</div>
+                    <input type="text" class="form-control" v-model="manualItem.referencia" required inputmode="numeric" pattern="[0-9]+" title="Solo números" maxlength="20">
+                    <div class="form-text">Debe ingresar la referencia del comprobante o transacción. Solo números.</div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Monto <span class="text-danger">*</span></label>
@@ -421,7 +421,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" @click="closeManualModal">Cancelar</button>
-                <button class="btn btn-primary" @click="guardarManual" :disabled="!manualItem.banco || !manualItem.referencia || !manualItem.monto || manualItem.monto <= 0">Guardar</button>
+                <button class="btn btn-primary" @click="guardarManual" :disabled="!manualItem.banco || !manualItem.referencia || !/^[0-9]+$/.test(manualItem.referencia) || !manualItem.monto || manualItem.monto <= 0">Guardar</button>
             </div>
         </div>
     </div>
@@ -439,16 +439,16 @@
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Cédula <span class="text-danger">*</span></label>
-                    <input type="text" class="form-control" v-model="nuevoCliente.cedula" placeholder="V-12345678" required inputmode="numeric">
+                    <input type="text" class="form-control" v-model="nuevoCliente.cedula" placeholder="12345678" required inputmode="numeric" pattern="[0-9]+" title="Solo números">
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Teléfono (Opcional)</label>
-                    <input type="text" class="form-control" v-model="nuevoCliente.telefono" placeholder="0412-1234567">
+                    <input type="text" class="form-control" v-model="nuevoCliente.telefono" placeholder="04121234567" inputmode="numeric" pattern="[0-9]*" title="Solo números">
                 </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" @click="closeNuevoClienteModal">Cancelar</button>
-                <button class="btn btn-primary" @click="agregarCliente">Guardar Cliente</button>
+                <button class="btn btn-primary" @click="agregarCliente" :disabled="!nuevoCliente.nombre || !nuevoCliente.cedula || !/^[0-9]+$/.test(nuevoCliente.cedula) || (nuevoCliente.telefono && !/^[0-9]+$/.test(nuevoCliente.telefono))">Guardar Cliente</button>
             </div>
         </div>
     </div>
@@ -466,16 +466,16 @@
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Cédula <span class="text-danger">*</span></label>
-                    <input type="text" class="form-control" v-model="editandoCliente.cedula">
+                    <input type="text" class="form-control" v-model="editandoCliente.cedula" inputmode="numeric" pattern="[0-9]+" title="Solo números">
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Teléfono (Opcional)</label>
-                    <input type="text" class="form-control" v-model="editandoCliente.telefono">
+                    <input type="text" class="form-control" v-model="editandoCliente.telefono" inputmode="numeric" pattern="[0-9]*" title="Solo números">
                 </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" @click="closeEditarClienteModal">Cancelar</button>
-                <button class="btn btn-primary" @click="guardarEdicion">Actualizar</button>
+                <button class="btn btn-primary" @click="guardarEdicion" :disabled="!editandoCliente.cedula || !/^[0-9]+$/.test(editandoCliente.cedula) || (editandoCliente.telefono && !/^[0-9]+$/.test(editandoCliente.telefono))">Actualizar</button>
             </div>
         </div>
     </div>

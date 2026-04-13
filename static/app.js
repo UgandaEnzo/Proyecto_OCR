@@ -268,6 +268,10 @@ createApp({
                 this.showToast('Falta la referencia: ingresa una referencia válida para el pago.', 'warning');
                 return;
             }
+            if (!/^[0-9]+$/.test(this.manualItem.referencia.trim())) {
+                this.showToast('La referencia debe contener solo números.', 'warning');
+                return;
+            }
             if (!this.manualItem.monto || this.manualItem.monto <= 0) {
                 this.showToast('Monto inválido: ingresa un valor numérico mayor a cero.', 'warning');
                 return;
@@ -310,6 +314,14 @@ createApp({
                 this.showToast('La cédula es obligatoria', 'warning');
                 return;
             }
+            if (!/^[0-9]+$/.test(this.nuevoCliente.cedula.trim())) {
+                this.showToast('La cédula debe contener solo números.', 'warning');
+                return;
+            }
+            if (this.nuevoCliente.telefono && !/^[0-9]+$/.test(this.nuevoCliente.telefono.trim())) {
+                this.showToast('El teléfono debe contener solo números.', 'warning');
+                return;
+            }
             try {
                 const resp = await fetch('/clientes/', {
                     method: 'POST',
@@ -338,6 +350,18 @@ createApp({
         },
         async guardarEdicion() {
             if (!this.editandoCliente) return;
+            if (!this.editandoCliente.cedula || !this.editandoCliente.cedula.trim()) {
+                this.showToast('La cédula es obligatoria', 'warning');
+                return;
+            }
+            if (!/^[0-9]+$/.test(this.editandoCliente.cedula.trim())) {
+                this.showToast('La cédula debe contener solo números.', 'warning');
+                return;
+            }
+            if (this.editandoCliente.telefono && !/^[0-9]+$/.test(this.editandoCliente.telefono.trim())) {
+                this.showToast('El teléfono debe contener solo números.', 'warning');
+                return;
+            }
             try {
                 const resp = await fetch(`/clientes/${this.editandoCliente.id}/`, {
                     method: 'PUT',

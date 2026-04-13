@@ -162,8 +162,10 @@ class ClienteBase(BaseModel):
     @field_validator('cedula', 'telefono')
     @classmethod
     def check_numeric(cls, v):
-        if v is not None and v != "" and not v.isdigit():
-            raise ValueError('Este campo debe contener solo números')
+        if v is not None and v != "":
+            v = v.strip()
+            if not v.isdigit():
+                raise ValueError('Este campo debe contener solo números')
         return v
 
 class Cliente(ClienteBase):
@@ -245,6 +247,12 @@ class PagoManual(BaseModel):
         if not valor:
             field_name = info.field_name.capitalize()
             raise ValueError(f"{field_name} es obligatorio y no puede estar vacío.")
+        return valor
+
+    @field_validator('referencia')
+    def validar_referencia(cls, valor):
+        if isinstance(valor, str) and not valor.isdigit():
+            raise ValueError("La referencia debe contener solo números.")
         return valor
 
     @field_validator('monto')
