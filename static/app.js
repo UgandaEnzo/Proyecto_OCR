@@ -79,6 +79,13 @@ createApp({
             return pagos;
         },
     },
+    watch: {
+        vistaActual(newVal) {
+            if (newVal === 'clientes') {
+                this.cargarClientes();
+            }
+        },
+    },
     methods: {
         async cargar(page = 1) {
             if (page < 1) {
@@ -641,6 +648,9 @@ createApp({
                 const data = await resp.json();
                 if (resp.ok) {
                     this.showToast(data.mensaje || 'Pagos importados', 'success');
+                    if (this.vistaActual === 'pagos') {
+                        await this.cargar(this.page);
+                    }
                 } else {
                     this.showToast(data.detail || 'Error al importar pagos', 'danger');
                 }
@@ -650,8 +660,8 @@ createApp({
                 event.target.value = '';
             }
         },
-        async limpiarDatosPrueba() {
-            if (!confirm('Deseas borrar los pagos de prueba y no verificados?')) return;
+        async limpiarPagos() {
+            if (!confirm('¿Deseas eliminar los pagos de prueba y no verificados?')) return;
             try {
                 const resp = await fetch('/gestion/db/clear-test-data', {
                     method: 'POST',
@@ -660,12 +670,38 @@ createApp({
                 });
                 const data = await resp.json();
                 if (resp.ok) {
-                    this.showToast(data.mensaje || 'Datos de prueba eliminados', 'success');
+                    this.showToast(data.mensaje || 'Pagos limpiados correctamente', 'success');
+                    await this.cargarGestionStatus();
+                    if (this.vistaActual === 'pagos') {
+                        await this.cargar(this.page);
+                    }
                 } else {
-                    this.showToast(data.detail || 'Error al limpiar datos', 'danger');
+                    this.showToast(data.detail || 'Error al limpiar pagos', 'danger');
                 }
             } catch (err) {
-                this.showToast('Error al limpiar datos de prueba', 'danger');
+                this.showToast('Error al limpiar pagos', 'danger');
+            }
+        },
+        async limpiarClientes() {
+            if (!confirm('¿Deseas eliminar todos los clientes del sistema?')) return;
+            try {
+                const resp = await fetch('/gestion/clientes/clear', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ confirm: true }),
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    this.showToast(data.mensaje || 'Clientes limpiados correctamente', 'success');
+                    await this.cargarGestionClientesSummary();
+                    if (this.vistaActual === 'clientes') {
+                        await this.cargarClientes();
+                    }
+                } else {
+                    this.showToast(data.detail || 'Error al limpiar clientes', 'danger');
+                }
+            } catch (err) {
+                this.showToast('Error al limpiar clientes', 'danger');
             }
         },
         async guardarCredenciales() {
@@ -723,6 +759,9 @@ createApp({
                 if (resp.ok) {
                     this.showToast(data.mensaje || 'Clientes importados', 'success');
                     await this.cargarGestionClientesSummary();
+                    if (this.vistaActual === 'clientes') {
+                        await this.cargarClientes();
+                    }
                 } else {
                     this.showToast(data.detail || 'Error al importar clientes', 'danger');
                 }

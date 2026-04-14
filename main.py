@@ -758,6 +758,17 @@ def limpiar_datos_prueba(data: ConfirmBody, db: Session = Depends(get_db)):
     db.commit()
     return {"mensaje": f"{deleted} pagos de prueba eliminados correctamente."}
 
+@app.post("/gestion/clientes/clear")
+def limpiar_clientes(data: ConfirmBody, db: Session = Depends(get_db)):
+    if not data.confirm:
+        raise HTTPException(status_code=400, detail="Se requiere confirmación para borrar los clientes.")
+    clientes = db.query(models.Cliente).all()
+    deleted = len(clientes)
+    for cliente in clientes:
+        db.delete(cliente)
+    db.commit()
+    return {"mensaje": f"{deleted} clientes eliminados correctamente."}
+
 @app.get("/gestion/db/credentials")
 def obtener_credenciales():
     return {
