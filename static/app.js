@@ -35,6 +35,9 @@ createApp({
             uploadBank: '',
             uploadError: '',
             uploadFileSelected: false,
+            uploadPreviewUrl: '',
+            uploadPredictedBank: '',
+            uploadSudebanCode: '',
             procesandoSubida: false,
             manualItem: {
                 banco: '',
@@ -201,15 +204,66 @@ createApp({
             this.uploadError = '';
             this.uploadBank = '';
             this.uploadFileSelected = false;
+            this.uploadPreviewUrl = '';
+            this.uploadPredictedBank = '';
+            this.uploadSudebanCode = '';
             this.showUploadModal = true;
         },
+        async detectarBancoPreview(file) {
+            if (!file || !file.type.startsWith('image/')) return;
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+                const resp = await fetch('/detectar-banco/', {
+                    method: 'POST',
+                    headers: this.getAuthHeaders(),
+                    body: formData,
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    const predicted = data.banco_predicho || data.banco_ia || '';
+                    this.uploadPredictedBank = predicted && predicted !== 'Desconocido' ? predicted : '';
+                    this.uploadSudebanCode = data.sudeban_code || '';
+                    if (!this.uploadBank && this.uploadPredictedBank && this.bancosDisponibles.includes(this.uploadPredictedBank)) {
+                        this.uploadBank = this.uploadPredictedBank;
+                    }
+                }
+            } catch (err) {
+                console.warn('No se pudo detectar banco automáticamente', err);
+            }
+        },
         onUploadFileChange(event) {
-            this.uploadFileSelected = event.target.files && event.target.files.length > 0;
+            const file = event.target.files?.[0];
+            this.uploadFileSelected = !!file;
+            if (this.uploadPreviewUrl) {
+                URL.revokeObjectURL(this.uploadPreviewUrl);
+                this.uploadPreviewUrl = '';
+            }
+            this.uploadPredictedBank = '';
+            this.uploadSudebanCode = '';
+            this.uploadError = '';
+            if (file) {
+                this.uploadPreviewUrl = URL.createObjectURL(file);
+                this.detectarBancoPreview(file);
+            }
+        },
+        applyDetectedBank() {
+            if (this.uploadPredictedBank && this.bancosDisponibles.includes(this.uploadPredictedBank)) {
+                this.uploadBank = this.uploadPredictedBank;
+            }
         },
         closeUploadModal() {
+            if (this.uploadPreviewUrl) {
+                URL.revokeObjectURL(this.uploadPreviewUrl);
+            }
+            const uploadForm = document.getElementById('uploadForm');
+            if (uploadForm) uploadForm.reset();
             this.showUploadModal = false;
             this.uploadError = '';
             this.uploadFileSelected = false;
+            this.uploadPreviewUrl = '';
+            this.uploadPredictedBank = '';
+            this.uploadSudebanCode = '';
         },
         abrirModalManual() {
             this.editandoPagoId = null;
@@ -321,34 +375,40 @@ createApp({
                 this.showToast('La cédula es obligatoria', 'warning');
                 return;
             }
-            if (!/^[0-9]+$/.test(this.nuevoCliente.cedula.trim())) {
+            const cedula = this.nuevoCliente.cedula.trim();
+            if (!/^[0-9]+$/.test(cedula)) {
                 this.showToast('La cédula debe contener solo números.', 'warning');
                 return;
             }
-            if (this.nuevoCliente.telefono && !/^[0-9]+$/.test(this.nuevoCliente.telefono.trim())) {
+            const telefono = this.nuevoCliente.telefono ? this.nuevoCliente.telefono.trim() : '';
+            if (telefono && !/^[0-9]+$/.test(telefono)) {
                 this.showToast('El teléfono debe contener solo números.', 'warning');
                 return;
             }
             try {
                 const resp = await fetch('/clientes/', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(this.nuevoCliente),
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({
+                        nombre: this.nuevoCliente.nombre.trim(),
+                        cedula,
+                        telefono,
+                    }),
                 });
-                const data = await resp.json();
+                const data = await resp.json().catch(() => ({}));
                 if (resp.ok) {
                     this.showToast('Cliente agregado', 'success');
                     this.closeNuevoClienteModal();
                     this.cargarClientes();
                 } else {
-                    this.showToast(data.detail || data.error || 'Error al agregar cliente', 'danger');
+                    this.showToast(data.detail || data.error || data.message || 'Error al agregar cliente', 'danger');
                 }
             } catch (err) {
                 this.showToast('Error al agregar cliente', 'danger');
             }
         },
         prepararEdicion(cliente) {
-            this.editandoCliente = { ...cliente };
+            this.editandoCliente = { ...cliente, telefono: cliente.telefono || '' };
             this.showEditarClienteModal = true;
         },
         closeEditarClienteModal() {
@@ -361,27 +421,33 @@ createApp({
                 this.showToast('La cédula es obligatoria', 'warning');
                 return;
             }
-            if (!/^[0-9]+$/.test(this.editandoCliente.cedula.trim())) {
+            const cedula = this.editandoCliente.cedula.trim();
+            if (!/^[0-9]+$/.test(cedula)) {
                 this.showToast('La cédula debe contener solo números.', 'warning');
                 return;
             }
-            if (this.editandoCliente.telefono && !/^[0-9]+$/.test(this.editandoCliente.telefono.trim())) {
+            const telefono = this.editandoCliente.telefono ? this.editandoCliente.telefono.trim() : '';
+            if (telefono && !/^[0-9]+$/.test(telefono)) {
                 this.showToast('El teléfono debe contener solo números.', 'warning');
                 return;
             }
             try {
-                const resp = await fetch(`/clientes/${this.editandoCliente.id}/`, {
+                const resp = await fetch(`/clientes/${this.editandoCliente.id}`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(this.editandoCliente),
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({
+                        nombre: this.editandoCliente.nombre ? this.editandoCliente.nombre.trim() : '',
+                        cedula,
+                        telefono,
+                    }),
                 });
-                const data = await resp.json();
+                const data = await resp.json().catch(() => ({}));
                 if (resp.ok) {
                     this.showToast('Cliente actualizado', 'success');
                     this.closeEditarClienteModal();
                     this.cargarClientes();
                 } else {
-                    this.showToast(data.error || 'Error al actualizar cliente', 'danger');
+                    this.showToast(data.detail || data.error || data.message || 'Error al actualizar cliente', 'danger');
                 }
             } catch (err) {
                 this.showToast('Error al actualizar cliente', 'danger');
@@ -390,13 +456,13 @@ createApp({
         async eliminarCliente(id) {
             if (!confirm('¿Eliminar este cliente?')) return;
             try {
-                const resp = await fetch(`/clientes/${id}/`, { method: 'DELETE' });
+                const resp = await fetch(`/clientes/${id}`, { method: 'DELETE' });
                 const data = await resp.json();
                 if (resp.ok) {
                     this.showToast('Cliente eliminado', 'success');
                     this.cargarClientes();
                 } else {
-                    this.showToast(data.error || 'Error al eliminar cliente', 'danger');
+                    this.showToast(data.detail || data.error || 'Error al eliminar cliente', 'danger');
                 }
             } catch (err) {
                 this.showToast('Error al eliminar cliente', 'danger');

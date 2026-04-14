@@ -350,12 +350,26 @@
                         <label class="form-label">Selecciona la imagen del pago</label>
                         <input class="form-control" type="file" name="file" accept="image/*" @change="onUploadFileChange" required>
                     </div>
+                    <div class="mb-3" v-if="uploadPreviewUrl">
+                        <label class="form-label">Vista previa del comprobante</label>
+                        <img :src="uploadPreviewUrl" class="img-fluid rounded comprobante-preview" alt="Vista previa del comprobante">
+                    </div>
                     <div class="mb-3">
                         <label class="form-label">Banco <span class="text-danger">*</span></label>
                         <select class="form-select" name="banco" v-model="uploadBank" required>
                             <option value="" disabled>-- Seleccione el Banco --</option>
                             <option v-for="c in bancosDisponibles" :key="c" :value="c">{{ c }}</option>
                         </select>
+                        <div class="form-text mt-1" v-if="uploadPredictedBank">
+                            Banco detectado automáticamente: <strong>{{ uploadPredictedBank }}</strong>
+                            <button type="button" class="btn btn-link btn-sm p-0 ms-2" @click="applyDetectedBank">Usar banco detectado</button>
+                        </div>
+                        <div class="form-text mt-1 text-muted" v-else>
+                            Carga una imagen para detectar el banco automáticamente.
+                        </div>
+                        <div class="form-text mt-1" v-if="uploadSudebanCode">
+                            Código SUDEBAN detectado: <strong>{{ uploadSudebanCode }}</strong>
+                        </div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Cliente Recurrente (Opcional)</label>
@@ -367,8 +381,8 @@
                 </form>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" @click="closeUploadModal">Cancelar</button>
-                <button class="btn btn-primary" @click="subirPago" :disabled="!uploadBank || !uploadFileSelected || procesandoSubida">
+                <button type="button" class="btn btn-secondary" @click="closeUploadModal">Cancelar</button>
+                <button type="button" class="btn btn-primary" @click="subirPago" :disabled="!uploadBank || !uploadFileSelected || procesandoSubida">
                     <span v-if="procesandoSubida" class="spinner"></span>
                     {{ procesandoSubida ? ' Procesando...' : 'Subir y Procesar' }}
                 </button>
@@ -409,8 +423,8 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" @click="closeManualModal">Cancelar</button>
-                <button class="btn btn-primary" @click="guardarManual" :disabled="!manualItem.banco || !manualItem.referencia || !/^[0-9]+$/.test(manualItem.referencia) || !manualItem.monto || manualItem.monto <= 0">Guardar</button>
+                <button type="button" class="btn btn-secondary" @click="closeManualModal">Cancelar</button>
+                <button type="button" class="btn btn-primary" @click="guardarManual" :disabled="!manualItem.banco || !manualItem.referencia || !/^[0-9]+$/.test(manualItem.referencia) || !manualItem.monto || manualItem.monto <= 0">Guardar</button>
             </div>
         </div>
     </div>
@@ -436,8 +450,8 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" @click="closeNuevoClienteModal">Cancelar</button>
-                <button class="btn btn-primary" @click="agregarCliente" :disabled="!nuevoCliente.nombre || !nuevoCliente.cedula || !/^[0-9]+$/.test(nuevoCliente.cedula) || (nuevoCliente.telefono && !/^[0-9]+$/.test(nuevoCliente.telefono))">Guardar Cliente</button>
+                <button type="button" class="btn btn-secondary" @click="closeNuevoClienteModal">Cancelar</button>
+                <button type="button" class="btn btn-primary" @click="agregarCliente" :disabled="!nuevoCliente.nombre || !nuevoCliente.cedula">Guardar Cliente</button>
             </div>
         </div>
     </div>
@@ -463,8 +477,8 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" @click="closeEditarClienteModal">Cancelar</button>
-                <button class="btn btn-primary" @click="guardarEdicion" :disabled="!editandoCliente.cedula || !/^[0-9]+$/.test(editandoCliente.cedula) || (editandoCliente.telefono && !/^[0-9]+$/.test(editandoCliente.telefono))">Actualizar</button>
+                <button type="button" class="btn btn-secondary" @click="closeEditarClienteModal">Cancelar</button>
+                <button type="button" class="btn btn-primary" @click="guardarEdicion" :disabled="!editandoCliente.cedula">Actualizar</button>
             </div>
         </div>
     </div>

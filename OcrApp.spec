@@ -1,11 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import os
+import sys
 from PyInstaller.utils.hooks import collect_all
 
 rapidocr_datas, rapidocr_binaries, rapidocr_hiddenimports = collect_all('rapidocr_onnxruntime')
 
-pathex = [os.path.abspath('.')]
+root_dir = os.path.abspath(os.path.dirname(sys.argv[0]))
+pathex = [root_dir]
+distpath = os.path.join(root_dir, 'dist')
+workpath = os.path.join(root_dir, 'build')
 
 hidden_imports = [
     'rapidocr_onnxruntime',
@@ -29,10 +33,10 @@ hidden_imports = [
 ] + rapidocr_hiddenimports
 
 a = Analysis(
-    ['run.py'],
+    [os.path.join(root_dir, 'run.py')],
     pathex=pathex,
     binaries=rapidocr_binaries,
-    datas=[('static', 'static')] + rapidocr_datas,
+    datas=[(os.path.join(root_dir, 'static'), 'static')] + rapidocr_datas,
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},

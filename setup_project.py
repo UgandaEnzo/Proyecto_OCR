@@ -3,11 +3,11 @@ import subprocess
 import sys
 import shutil
 
-def run_command(args, description):
+def run_command(args, description, cwd=None):
     """Ejecuta un comando y muestra el estado de la operación."""
     print(f"--- {description} ---")
     try:
-        subprocess.run(args, check=True)
+        subprocess.run(args, check=True, cwd=cwd)
     except subprocess.CalledProcessError as e:
         print(f"Error en: {description}. Detalle: {e}")
         return False
@@ -19,14 +19,14 @@ def setup_and_build():
         print(f"Error: Se requiere Python 3.10 o superior. Detectado: {sys.version.split()[0]}")
         return
 
-    project_dir = os.getcwd()
-    build_venv_dir = os.environ.get('PROJECT_BUILD_VENV')
-    if build_venv_dir:
-        build_venv_dir = os.path.abspath(build_venv_dir)
-    else:
-        build_venv_dir = os.path.join(project_dir, ".venv_build")
+    project_dir = os.path.dirname(os.path.abspath(__file__))
+    build_venv_dir = os.environ.get('PROJECT_BUILD_VENV', os.path.join(project_dir, ".venv_build"))
+    build_venv_dir = os.path.abspath(build_venv_dir)
     python_venv = os.path.join(build_venv_dir, "Scripts", "python.exe") if os.name == 'nt' else os.path.join(build_venv_dir, "bin", "python")
     pyvenv_cfg = os.path.join(build_venv_dir, 'pyvenv.cfg')
+    requirements_txt = os.path.join(project_dir, 'requirements.txt')
+    requirements_dev_txt = os.path.join(project_dir, 'requirements-dev.txt')
+    spec_path = os.path.join(project_dir, 'OcrApp.spec')
 
     print("Limpiando instalaciones previas...")
     for folder in ['build', 'dist', build_venv_dir]:
@@ -45,23 +45,23 @@ def setup_and_build():
         print("Entorno virtual de build ya existe.")
 
     print("Actualizando pip y herramientas base...")
-    if not run_command([python_venv, '-m', 'pip', 'install', '--upgrade', 'pip', 'setuptools', 'wheel'], "Instalando utilidades de Python"):
+    if not run_command([python_venv, '-m', 'pip', 'install', '--upgrade', 'pip', 'setuptools', 'wheel'], "Instalando utilidades de Python", cwd=project_dir):
         return
 
-    if os.path.exists("requirements.txt"):
-        if not run_command([python_venv, '-m', 'pip', 'install', '-r', 'requirements.txt'], "Instalando dependencias de producción"):
+    if os.path.exists(requirements_txt):
+        if not run_command([python_venv, '-m', 'pip', 'install', '-r', requirements_txt], "Instalando dependencias de producción", cwd=project_dir):
             return
     else:
         print("No se encontró requirements.txt. Crea el archivo antes de continuar.")
         return
 
-    if os.path.exists("requirements-dev.txt"):
-        if not run_command([python_venv, '-m', 'pip', 'install', '-r', 'requirements-dev.txt'], "Instalando dependencias de desarrollo"):
+    if os.path.exists(requirements_dev_txt):
+        if not run_command([python_venv, '-m', 'pip', 'install', '-r', requirements_dev_txt], "Instalando dependencias de desarrollo", cwd=project_dir):
             return
 
     print("Ejecutando PyInstaller...")
-    if os.path.exists("OcrApp.spec"):
-        if not run_command([python_venv, '-m', 'PyInstaller', '--clean', 'OcrApp.spec'], "Compilando desde OcrApp.spec"):
+    if os.path.exists(spec_path):
+        if not run_command([python_venv, '-m', 'PyInstaller', '--clean', spec_path], "Compilando desde OcrApp.spec", cwd=project_dir):
             return
     else:
         sep = ";" if os.name == 'nt' else ":"
@@ -87,7 +87,7 @@ def setup_and_build():
             f"static{sep}static",
             'run.py',
         ]
-        if not run_command(pyi_args, "Compilando OcrApp.exe"):
+        if not run_command(pyi_args, "Compilando OcrApp.exe", cwd=project_dir):
             return
 
     exe_path = os.path.join(project_dir, "dist", "OcrApp.exe")

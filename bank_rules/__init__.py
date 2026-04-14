@@ -36,8 +36,59 @@ AVAILABLE_BANKS = [
 ]
 
 
+SUD_BANK_CODES = {
+    "0102": "Banco de Venezuela",
+    "0134": "Banesco",
+    "0157": "DELSUR",
+    "0172": "Banco del Tesoro",
+    "0404": "Banco Bicentenario",
+    "0114": "BOD",
+    "0412": "Banco Exterior",
+    "0262": "Mercantil",
+    "0174": "Banco Caroní",
+    "0173": "Banco Activo",
+    "0115": "Banco Venezolano de Crédito",
+    "0171": "Banco Plaza",
+    "0177": "Banco Fondo Común",
+    "0199": "BANDEs",
+    "0105": "BBVA Provincial",
+}
+
+
 def get_available_banks():
     return list(AVAILABLE_BANKS)
+
+
+def get_bank_by_sudeban_code(code):
+    if not code:
+        return "Desconocido"
+    normalized = str(code).strip()
+    return SUD_BANK_CODES.get(normalized, "Desconocido")
+
+
+def extract_sudeban_code(texto):
+    if not texto:
+        return None
+    for match in re.finditer(r'\b(\d{4})\b', texto):
+        code = match.group(1)
+        if code in SUD_BANK_CODES:
+            return code
+    return None
+
+
+def normalize_bank_name(texto):
+    if not texto:
+        return "Desconocido"
+    candidate = texto.strip()
+    if candidate in AVAILABLE_BANKS:
+        return candidate
+    try:
+        estrategia = get_bank_strategy(candidate)
+        if estrategia and estrategia.name:
+            return estrategia.name
+    except Exception:
+        pass
+    return candidate
 
 
 def limpiar_texto_identificacion(texto):
@@ -55,6 +106,12 @@ def get_bank_strategy(texto_ocr, imagen=None):
     """
     texto = texto_ocr.lower()
     texto_limpio = limpiar_texto_identificacion(texto)
+
+    codigo_sudeban = extract_sudeban_code(texto_limpio)
+    if codigo_sudeban:
+        banco_por_codigo = get_bank_by_sudeban_code(codigo_sudeban)
+        if banco_por_codigo != "Desconocido":
+            return GenericStrategy(banco_por_codigo)
 
     # --- 1. Detección directa de banco ---
     if "app bnc" in texto_limpio or "soluciones financieras" in texto_limpio or "bnc" in texto_limpio:

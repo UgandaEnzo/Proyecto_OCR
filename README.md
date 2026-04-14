@@ -1,253 +1,150 @@
 Sistema de Conciliación de Pagos con OCR y IA
 =============================================
 
-Este proyecto es una solución de backend y panel administrativo construida con FastAPI para automatizar la conciliación de pagos. Utiliza **RapidOCR** para la extracción de texto, **Groq (Llama 3)** para el análisis semántico con IA, y **SQLAlchemy** para la gestión de datos y auditoría.
+Este proyecto es una solución de backend y panel administrativo construida con FastAPI para automatizar la conciliación de pagos. Utiliza **RapidOCR** para la extracción de texto, **Groq** para análisis semántico, y **SQLAlchemy** para la gestión de datos y auditoría.
 
-## Características
+## Características principales
 
--   **Carga de Pagos**: Sube imágenes de comprobantes de pago.
--   **OCR Automático**: Extrae automáticamente referencia, monto y banco de la imagen.
--   **Análisis con IA**: Utiliza un modelo de lenguaje para interpretar y estructurar los datos del OCR.
--   **Integridad Financiera**: Cálculos con precisión decimal (Decimal Type) para evitar errores de redondeo.
--   **Seguridad Anti-Fraude**: Sistema de hashing SHA256 para evitar duplicidad de comprobantes físicos.
--   **Resiliencia de Tasa**: Sistema de 4 niveles para obtención de tasa BCV (API, Scraping, DB, Env).
--   **Trazabilidad**: Auditoría completa de cada cambio en los estados de pago.
+-   **Carga de pagos por imagen**: administra recibos y comprobantes con extracción OCR.
+-   **OCR + IA**: combinación de RapidOCR y Groq para detectar referencia, monto, banco y datos de pago.
+-   **Exportes máximos**: reportes en `PDF` y `XLSX` con periodos `diario`, `semanal`, `quincenal`, `mensual`, `trimestral`, `semestral` y `anual`.
+-   **Normalización de períodos**: el campo `Periodo` se formatea correctamente para evitar desbordes y errores de presentación.
+-   **Conexión BCV robusta**: fallback en 4 niveles para obtener tasa de cambio (API, scraping, DB, env).
+-   **Auditoría completa**: historial de cambios por pago, incluidos ediciones y re-procesos.
+-   **Administración de clientes**: alta, edición, eliminación y historial de pagos por cliente.
+-   **Prevención de duplicados**: hashing SHA256 y comparación por referencia/monto/banco.
+-   **Interfaz web ligera**: frontend con Vue.js en `static/` y un panel de administración integrado.
 
-## Calidad del Código
-El proyecto sigue principios **SOLID** y utiliza `Pydantic` para validación de datos en tiempo real, asegurando que solo información limpia llegue a la base de datos.
--   **Reglas bancarias ampliadas**: Soporte directo para más bancos venezolanos y detección reforzada con el módulo `bank_rules`.
--   **Filtro de banco dinámico**: La UI carga la lista canónica de bancos desde el backend para que los filtros y los pagos manuales sean consistentes.
--   **Exportación de reportes**: Descarga reportes agregados como PDF o Excel directamente desde la interfaz.
--   **Anti-Duplicados**: Evita el procesamiento de la misma imagen o del mismo pago (referencia + monto + banco).
--   **Registro manual normalizado**: El formulario manual ahora utiliza una lista de bancos validada y un backend que normaliza las entradas.
--   **Gestión de Clientes**: Directorio completo que permite buscar, registrar, editar y eliminar clientes, además de visualizar su historial de pagos individual.
--   **Calculadora BCV**: Herramienta de conversión de moneda integrada que utiliza la tasa oficial del Banco Central de Venezuela con sistema de contingencia (fallback).
--   **Auditoría**: Registra un historial de cambios para cada pago.
--   **Interfaz Web**: Panel de control interactivo construido con Vue.js y estilos CSS locales.
-
-## Estructura del Proyecto
+## Estructura del proyecto
 
 ```
 /
-├── alembic/              # Directorio de migraciones de base de datos
-├── static/               # Archivos del frontend (HTML, CSS, JS)
-│   ├── app.js
-│   └── index.html
-├── uploads/              # Directorio donde se guardan las imágenes de los pagos
-├── .env                  # Archivo de variables de entorno (NO subir a Git)
-├── main.py               # Archivo principal de la aplicación FastAPI
-├── models.py             # Modelos de la base de datos (SQLAlchemy)
-├── database.py           # Configuración de la conexión a la base de datos
-├── ocr_engine.py         # Orquestador del flujo OCR (RapidOCR + Groq AI)
-├── ocr_utils.py          # Utilidades y carga del motor RapidOCR
-├── bank_rules/           # Reglas deterministas por banco (paquete modular)
-├── exchange.py           # Gestión de tasa BCV y conversiones
-├── scripts/              # Utilidades y pruebas de desarrollo (no se empaqueta en el .exe)
-├── setup_project.py      # Script de automatización de entorno y compilación
-├── run.py                # Script de entrada para el servidor
-├── OcrApp.spec           # Configuración de PyInstaller para empaquetado
+├── alembic/              # Migraciones de base de datos
+├── bank_rules/           # Reglas para detección de bancos
+├── static/               # Frontend (HTML, CSS, JS)
+├── uploads/              # Imágenes subidas
+├── .env                  # Variables de entorno (NO subir a Git)
+├── database.py           # Configuración de SQLAlchemy
+├── dist/                 # Ejecutable generado por PyInstaller
+├── main.py               # Aplicación FastAPI principal
+├── models.py             # Modelos de datos SQLAlchemy
+├── ocr_engine.py         # Motor OCR + IA
+├── ocr_utils.py          # Adaptadores de RapidOCR
+├── exchange.py           # Lógica de tasa BCV y conversión
+├── run.py                # Lanzador del servidor / ejecutable
+├── setup_project.py      # Script para build y empaquetado
+├── OcrApp.spec           # Configuración de PyInstaller
 ├── requirements.txt      # Dependencias de producción
 └── requirements-dev.txt  # Dependencias de desarrollo y empaquetado
 ```
 
-## Configuración del Entorno
+## Requisitos previos
 
-1.  **Clonar el repositorio**
+- Python 3.10 o superior
+- PostgreSQL para la base de datos
+- Acceso a internet para consultas de tasa BCV y algunas llamadas de IA
 
-2.  **Crear y activar un entorno virtual:**
+## Configuración del entorno
+
+1.  Clonar el repositorio.
+2.  Crear y activar el entorno virtual:
     ```powershell
     python -m venv .venv
     & .\.venv\Scripts\Activate.ps1
     ```
-
-3.  **Instalar dependencias:**
-    ```bash
+3.  Instalar dependencias de producción:
+    ```powershell
     pip install -r requirements.txt
     ```
-    > Si tu editor muestra errores de importación, asegúrate de seleccionar el intérprete Python de tu entorno virtual `.venv`.
-    > Nota: Se recomienda Python 3.10 o superior (compatible con 3.14+).
-    > Para herramientas de desarrollo, migraciones y empaquetado opcional, instala también `requirements-dev.txt`.
-
-4.  **Crear el archivo `.env`:**
-    Crea un archivo llamado `.env` en la raíz del proyecto y añade las siguientes variables:
-    ```env
-    # URL de conexión a tu base de datos PostgreSQL.
-    # Se recomienda usar DATABASE_URL para simplificar la configuración.
-    DATABASE_URL="postgresql://user:password@host:port/database"
-
-    # Si no usas DATABASE_URL, define las siguientes variables de conexión:
-    # DB_USER="usuario"
-    # DB_PASS="clave"
-    # DB_HOST="localhost"
-    # DB_PORT="5432"
-    # DB_NAME="nombre_de_la_base"
-
-    # Clave de API para el servicio de Groq
-    GROQ_API_KEY="gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-
-    # --- Variables de OCR y configuración ---
-
-    # Modelo de Groq para análisis de pago móvil
-    GROQ_MODEL="llama3-8b-8192"
-
-    # URL opcional para el servicio de tasa BCV
-    # TASA_BCV_API_URL="https://api.bcv.example/v1/tasa"
-    # TASA_BCV_SKIP_TLS_VERIFY=false
-
-    # Nivel de logs: DEBUG, INFO, WARNING, ERROR
-    LOG_LEVEL=INFO
-
-    # Tamaño máximo de subida en MB
-    MAX_UPLOAD_MB=10
-
-    # Si se define, las rutas protegidas exigirán el header: x-api-key
-    # API_KEY="una-clave-secreta-muy-larga"
-    ```
-
-## Uso
-
-1.  **Ejecutar el servidor de desarrollo:**
-    ```bash
-    uvicorn main:app --reload
-    ```
-    -   El panel de control estará en `http://127.0.0.1:8000`.
-    -   La documentación de la API (Swagger) estará en `http://127.0.0.1:8000/api/docs`.
-
-## Crear un Ejecutable (.exe)
-
-Puedes empaquetar esta aplicación en un único archivo ejecutable para distribuirla y ejecutarla en otras máquinas Windows sin necesidad de instalar Python o un entorno virtual. Para esto, usaremos `PyInstaller`.
-
-**Importante:** El ejecutable seguirá necesitando dos cosas en la máquina de destino:
-1.  **Conexión a la base de datos PostgreSQL.** El `.env` junto al `.exe` debe apuntar a ella.
-2.  **Motor ONNX.** El ejecutable utiliza `rapidocr_onnxruntime`, que es significativamente más ligero y rápido que PyTorch/EasyOCR.
-
-**Pasos:**
-
-1.  **Instalar PyInstaller en tu entorno virtual:**
-    ```bash
-    pip install pyinstaller
-    ```
-
-2.  **Instalar dependencias de desarrollo (opcional):**
-    Si necesitas empaquetar el proyecto, ejecutar migraciones o ejecutar pruebas, instala también los extras de desarrollo:
-    ```bash
+4.  Instalar dependencias de desarrollo (opcional para pruebas y empaquetado):
+    ```powershell
     pip install -r requirements-dev.txt
     ```
 
-3.  **Ejecutar el empaquetado:**
-    La forma recomendada es usar el script de build incluido.
+## Archivo `.env`
 
-    ```bash
+Crea un archivo `.env` en la raíz del proyecto con al menos estas variables:
+
+```env
+DATABASE_URL="postgresql://user:password@host:port/database"
+GROQ_API_KEY="gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+GROQ_MODEL="llama3-8b-8192"
+LOG_LEVEL=INFO
+MAX_UPLOAD_MB=10
+```
+
+> Si no usas `DATABASE_URL`, puedes definir las variables separadas `DB_USER`, `DB_PASS`, `DB_HOST`, `DB_PORT` y `DB_NAME`.
+
+## Ejecutar en desarrollo
+
+```powershell
+uvicorn main:app --reload
+```
+
+- Frontend disponible en `http://127.0.0.1:8000`
+- Documentación Swagger en `http://127.0.0.1:8000/api/docs`
+- OpenAPI JSON en `http://127.0.0.1:8000/api/openapi.json`
+
+## Empaquetar como ejecutable (.exe)
+
+El proyecto incluye un flujo de build completo con `setup_project.py` y `OcrApp.spec`.
+
+1.  Instala las dependencias de desarrollo:
+    ```powershell
+    pip install -r requirements-dev.txt
+    ```
+2.  Ejecuta el build:
+    ```powershell
     python setup_project.py
-    py setup_project.py
     ```
 
-    El script `setup_project.py` instala automáticamente las dependencias de producción y desarrollo necesarias, crea un entorno virtual de empaquetado y ejecuta PyInstaller.
-    El archivo `run.py` carga el `.env` automáticamente cuando se ejecuta desde el ejecutable.
+El script crea `.venv_build`, instala las dependencias desde `requirements.txt` y `requirements-dev.txt`, y ejecuta PyInstaller para generar `dist\OcrApp.exe`.
 
-    Si prefieres usar PyInstaller directamente, puedes ejecutar:
+> El ejecutable **no incluye** el archivo `.env`, así que debes colocarlo junto al `.exe` en el equipo destino.
 
-    ```bash
-    # En Windows (usa ; como separador para --add-data)
-    pyinstaller --name "OcrApp" --onefile --clean \
-      --hidden-import rapidocr_onnxruntime \
-      --hidden-import pillow \
-      --hidden-import numpy \
-      --hidden-import openpyxl \
-      --hidden-import reportlab \
-      --hidden-import groq \
-      --hidden-import fastapi \
-      --hidden-import starlette \
-      --hidden-import pydantic \
-      --hidden-import uvicorn \
-      --hidden-import httpx \
-      --hidden-import bs4 \
-      --add-data "static;static" run.py
-    ```
+## Endpoints principales
 
-    > Nota: `scripts/` es solo para desarrollo y pruebas locales. No se agrega al ejecutable porque no se incluye como recurso ni se importa en tiempo de ejecución.
+- `GET /` → redirige a la interfaz web en `static/index.html`
+- `GET /api/docs` → documentación Swagger
+- `GET /reportes/` → devuelve reportes agregados por período
+- `GET /reportes/export/` → exporta reportes en `pdf` o `xlsx`
+- `POST /subir-pago/` → sube comprobante de pago por imagen
+- `POST /pago-manual/` → crea pago manual sin imagen
+- `GET /clientes/` → lista clientes
+- `POST /clientes/` → crea cliente
+- `PUT /clientes/{cliente_id}` → actualiza cliente
+- `GET /clientes/{cliente_id}/pagos` → historial de pagos por cliente
+- `POST /convertir-a-usd/` → convierte Bs a USD usando tasa BCV actual
 
-    > Recomendado: usa `OcrApp.spec` para incluir correctamente los recursos de RapidOCR en el ejecutable.
+## Solución de problemas
 
-    > Nota: El archivo `.env` debe situarse en la misma carpeta que el `.exe` para que la aplicación cargue la configuración correctamente.
+### No se encuentra `.env`
 
-4.  **Encontrar el ejecutable:**
-    Una vez que el proceso termine, encontrarás `OcrApp.exe` dentro de una nueva carpeta llamada `dist`. Puedes copiar este archivo a otra máquina, colocar un archivo `.env` configurado a su lado, y ejecutarlo. La carpeta `uploads/` se creará automáticamente al primer uso.
+El ejecutable carga `.env` desde el directorio del ejecutable o desde sus padres. Si no se encuentra, muestra una advertencia y deja de usar variables de entorno basadas en archivo.
 
-5.  **Migraciones de Base de Datos (Alembic - Opcional):**
-    El servidor principal ya valida y crea las tablas necesarias durante el arranque. Si necesitas versionar el esquema de manera explícita, utiliza Alembic.
+### Error 401 con Groq
 
-    -   **Generar una nueva migración:**
-        ```bash
-        alembic revision --autogenerate -m "Descripción del cambio"
-        ```
-    -   **Aplicar las migraciones:**
-        ```bash
-        alembic upgrade head
-        ```
-    -   **Mantenimiento**: Las migraciones se manejan con `alembic` en la raíz del proyecto, pero el inicio automático del servidor es suficiente para cambios menores.
-## Endpoints de la API
+- Revisa `GROQ_API_KEY`.
+- Asegúrate de que la clave no tenga espacios invisibles.
+- El sistema puede reintentar con lógica de fallback si la IA no responde.
 
-La documentación interactiva de la API está disponible en `http://127.0.0.1:8000/api/docs`.
+## Actualizaciones recientes
 
--   `POST /subir-pago/`: Sube una imagen para procesar un pago.
--   `POST /pago-manual/`: Registra un pago manualmente sin imagen.
--   `GET /bancos/`: Devuelve la lista canónica de bancos soportados por el filtro y el formulario manual.
--   `GET /ver-pagos/`: Lista los pagos con paginación y admite filtro opcional por `banco` y `q`.
--   `GET /pagos/`: Lista los pagos filtrados por banco emisor u origen con paginación.
--   `GET /reportes/`: Genera reportes agregados por período (`diario`, `semanal`, `quincenal`, `mensual`, `trimestral`, `semestral`, `anual`) y acepta `start_date` / `end_date`.
--   `GET /reportes/export/`: Exporta el reporte como `pdf` o `xlsx` usando los mismos filtros de período y fechas.
--   `GET /buscar-pagos/`: Busca pagos por número de referencia con paginación.
--   `PATCH /pago/{pago_id}/estado`: Cambia el estado de un pago (`verificado`, `falso`, etc.).
--   `POST /reprocesar/{pago_id}`: Vuelve a ejecutar el OCR en un pago existente.
--   `GET /pago/{pago_id}/historial`: Obtiene la auditoría de cambios de un pago.
--   `DELETE /eliminar-pago-ref/{referencia}`: Elimina un pago por su referencia (requiere `confirm=true`).
--   `GET /clientes/`: Lista y busca clientes en el directorio.
--   `POST /clientes/`: Crea un nuevo cliente.
--   `PUT /clientes/{cliente_id}`: Actualiza la información de un cliente existente.
--   `DELETE /clientes/{cliente_id}`: Elimina a un cliente del sistema.
--   `GET /clientes/{cliente_id}/pagos`: Obtiene el historial de pagos de un cliente específico.
--   `POST /convertir-a-usd/`: Realiza la conversión de montos de Bs a USD usando la tasa oficial.
+### 2026-04-14: Correcciones de reporte y exportación
 
-## Solución de Problemas
+- Se corrigió la exportación de `reportes` para todos los períodos (`diario`, `semanal`, `quincenal`, `mensual`, `trimestral`, `semestral`, `anual`).
+- Se normalizó el campo `Periodo` en los reportes para que siempre muestre fechas legibles y evitar roturas de tabla en PDF/XLSX.
+- Se mejoró la creación de archivos Excel con celdas de texto envuelto y tamaños máximos de columna.
+- Se mejoró la generación de PDF con tablas y estilos estables para exportaciones largas.
 
-### Error 401 - Invalid API Key (Groq)
-Si ves un error `⚠️ [IA] Error en limpieza con Groq` en la consola:
-1. Verifica que la variable `GROQ_API_KEY` en tu archivo `.env` sea correcta.
-2. Asegúrate de que tu clave no tenga espacios adicionales.
-3. El sistema entrará automáticamente en modo **Fallback** (reglas rudas) si la IA falla, por lo que el OCR seguirá funcionando pero con menor precisión en formatos complejos.
+### 2026-04-04: Reglas bancarias y registro manual
 
----
+- El selector de bancos y el filtro de pagos usan la lista canónica de `bank_rules`.
+- El backend normaliza el banco en pagos manuales.
+- Se agregó un sistema de detección dual con texto y reglas visuales para mejorar la identificación de bancos.
 
-## Actualización 2026-04-01: Módulo BCV robusto
-Se ha implementado un flujo de tasa BCV con fallback: API + scraping + DB + env. Esta sección detalla los cambios recientes en el proyecto.
+### 2026-04-01: Módulo BCV robusto
 
-### Módulos clave
-- main.py: API principal, endpoints de subir-pago, pago-manual, ver-pagos, tasa-bcv, convertir-a-usd, clientes, auditoría y anti-duplicados.
-- exchange.py: gestión de tasa BCV y conversión Bs/USD con fallback y persistencia en TasaCambio.
-- models.py: SQLAlchemy ORM para Cliente, Pago, PagoHistory y TasaCambio.
-- ocr_engine.py: extracción OCR con RapidOCR y limpieza semántica con Groq.
-- database.py: configuración SQLAlchemy y sesión.
-- bank_rules/: reglas deterministas por banco y estrategia de detección.
-
-### Endpoint de tasa BCV (nuevo / mejorado)
-- GET /tasa-bcv/ => devuelve tasa_bcv, fecha_consulta, origen, es_fallback.
-- POST /tasa-bcv/ => actualiza valor con x-api-key.
-- POST /convertir-a-usd/ => convierte con tasa_bcv actual y devuelve monto_usd, origen, es_fallback.
-
-### Nota sobre entorno y certificados
-- TASA_BCV_API_URL en .env.
-- Si hay problemas SSL, usar TASA_BCV_SKIP_TLS_VERIFY=true.
-
-### Prueba de funcionamiento
-1. uvicorn main:app --reload
-2. GET /tasa-bcv/
-3. POST /convertir-a-usd/ {"monto_bs":10000}
-4. confirmar origen != DB si se obtiene tasa actual de API/scraping.
-
-## Actualización 2026-04-04: Reglas bancarias y registro manual
-Esta versión añade las siguientes mejoras:
-- `bank_rules` ahora expone una lista canónica de bancos con soporte extendido para múltiples bancos venezolanos.
-- El motor legacy de OCR usa `bank_rules` como fallback para identificar el banco cuando la IA no es concluyente.
-- El formulario de pago manual muestra un selector de bancos cargado desde `GET /bancos/` y normaliza los bancos en el backend.
-- El filtro de pagos por banco en la UI consume la misma lista canónica, reduciendo inconsistencias entre filtros y registros.
+- Flujo de tasa con fallback: API + scraping + DB + env.
+- Nuevos endpoints para `tasa-bcv` y `convertir-a-usd`.
+- Mejor resiliencia frente a fallos de red o cambios en la fuente de datos.

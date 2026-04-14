@@ -1,5 +1,6 @@
 import csv
 import os
+import re
 import sys
 import shutil
 import uuid
@@ -395,6 +396,10 @@ def actualizar_cliente(cliente_id: int, cliente_data: ClienteBase, db: Session =
     db.refresh(db_cliente)
     return db_cliente
 
+@app.put("/clientes/{cliente_id}/", include_in_schema=False)
+def actualizar_cliente_trailing_slash(cliente_id: int, cliente_data: ClienteBase, db: Session = Depends(get_db)):
+    return actualizar_cliente(cliente_id, cliente_data, db)
+
 @app.delete("/clientes/{cliente_id}")
 def eliminar_cliente(cliente_id: int, db: Session = Depends(get_db)):
     db_cliente = db.query(models.Cliente).filter(models.Cliente.id == cliente_id).first()
@@ -404,6 +409,10 @@ def eliminar_cliente(cliente_id: int, db: Session = Depends(get_db)):
     db.delete(db_cliente)
     db.commit()
     return {"mensaje": "Cliente eliminado"}
+
+@app.delete("/clientes/{cliente_id}/", include_in_schema=False)
+def eliminar_cliente_trailing_slash(cliente_id: int, db: Session = Depends(get_db)):
+    return eliminar_cliente(cliente_id, db)
 
 @app.get("/clientes/{cliente_id}/pagos", response_model=ClienteConPagos)
 def leer_pagos_de_cliente(cliente_id: int, db: Session = Depends(get_db)):
@@ -923,9 +932,12 @@ def buscar_pagos(q: str, page: int = 1, size: int = 10, limit: Optional[int] = N
     }
 
 @app.get("/pagos/", response_model=PagosResponse)
-def listar_pagos(banco: Optional[str] = None, page: int = 1, size: int = 10, db: Session = Depends(get_db)):
-    """Lista los pagos con opción de filtrar por banco emisor u origen."""
+def listar_pagos(q: Optional[str] = None, banco: Optional[str] = None, page: int = 1, size: int = 10, db: Session = Depends(get_db)):
+    """Lista los pagos con opción de filtrar por referencia y banco emisor u origen."""
     query = db.query(models.Pago)
+    if q:
+        termino_q = f"%{q}%"
+        query = query.filter(models.Pago.referencia.ilike(termino_q))
     if banco:
         termino = f"%{banco}%"
         query = query.filter(
@@ -1012,8 +1024,9 @@ def _query_reporte(db: Session, tipo_reporte: str, fecha_inicio: Optional[dateti
 
     resultados = []
     for r in grouped:
+        periodo_text = _simplificar_periodo(r.periodo)
         resultados.append({
-            "periodo": r.periodo.isoformat() if hasattr(r.periodo, "isoformat") else str(r.periodo),
+            "periodo": periodo_text,
             "desde": r.desde,
             "hasta": r.hasta,
             "total_bs": float(r.total_bs or 0),
@@ -1021,6 +1034,29 @@ def _query_reporte(db: Session, tipo_reporte: str, fecha_inicio: Optional[dateti
             "conteo": int(r.conteo or 0)
         })
     return resultados
+
+
+def _simplificar_periodo(periodo: Optional[object]) -> str:
+    if periodo is None:
+        return ""
+    if isinstance(periodo, datetime):
+        return periodo.strftime("%d-%m-%Y")
+    if isinstance(periodo, str):
+        periodo = periodo.strip()
+        if not periodo:
+            return ""
+        try:
+            if "T" in periodo:
+                fecha = datetime.fromisoformat(periodo)
+                return fecha.strftime("%d-%m-%Y")
+        except Exception:
+            pass
+        if "T" in periodo:
+            return periodo.split("T")[0]
+        if " " in periodo and ":" in periodo:
+            return periodo.split(" ")[0]
+        return periodo
+    return str(periodo)
 
 
 def _query_pagos_detalle(db: Session, fecha_inicio: Optional[datetime], fecha_fin: Optional[datetime]) -> List[models.Pago]:
@@ -1033,48 +1069,182 @@ def _query_pagos_detalle(db: Session, fecha_inicio: Optional[datetime], fecha_fi
     return query.order_by(models.Pago.fecha_registro.desc()).all()
 
 
+def parse_monto_string(valor) -> float:
+    if valor is None:
+        return 0.0
+    if isinstance(valor, (int, float)):
+        return float(valor)
+    texto = str(valor).strip()
+    if not texto:
+        return 0.0
+
+    texto = re.sub(r'\s+', '', texto)
+    texto = texto.replace('Bs', '').replace('Bs.', '').replace('Bs,', '')
+    texto = re.sub(r'[^0-9\,\.\-]', '', texto)
+
+    if texto.count(',') > 0 and texto.count('.') > 0:
+        if texto.rfind(',') > texto.rfind('.'):
+            texto = texto.replace('.', '')
+            texto = texto.replace(',', '.')
+        else:
+            texto = texto.replace(',', '')
+    else:
+        texto = texto.replace(',', '.')
+
+    try:
+        return float(texto)
+    except ValueError:
+        return 0.0
+
+
+def _extraer_codigo_sudeban(texto: Optional[str]) -> Optional[str]:
+    if not texto:
+        return None
+    texto = str(texto)
+    match = re.search(r'\b(\d{4})\b', texto)
+    if match:
+        return match.group(1)
+    return None
+
+
+def _agrupar_totales_sudeban(pagos_detalle: List[models.Pago]) -> List[dict]:
+    grupos = {}
+    for pago in pagos_detalle:
+        codigo = _extraer_codigo_sudeban(pago.banco) or _extraer_codigo_sudeban(pago.banco_destino)
+        if codigo:
+            banco_formal = bank_rules.get_bank_by_sudeban_code(codigo)
+            etiqueta = f"{codigo} - {banco_formal}" if banco_formal != 'Desconocido' else f"{codigo} - Desconocido"
+        else:
+            etiqueta = f"Desconocido"
+            codigo = "N/A"
+
+        clave = (codigo, etiqueta)
+        if clave not in grupos:
+            grupos[clave] = {
+                "sudeban_code": codigo,
+                "banco_label": etiqueta,
+                "total_bs": 0.0,
+                "total_usd": 0.0,
+                "conteo": 0,
+            }
+        grupos[clave]["total_bs"] += parse_monto_string(pago.monto)
+        grupos[clave]["total_usd"] += parse_monto_string(pago.monto_usd)
+        grupos[clave]["conteo"] += 1
+
+    return [
+        {
+            "sudeban_code": codigo,
+            "banco_label": etiqueta,
+            "total_bs": valores["total_bs"],
+            "total_usd": valores["total_usd"],
+            "conteo": valores["conteo"],
+        }
+        for (codigo, etiqueta), valores in sorted(grupos.items(), key=lambda item: item[0])
+    ]
+
+
 def _crear_excel_reporte(resultados: List[dict], pagos_detalle: List[models.Pago], tipo_reporte: str, start_date: Optional[datetime], end_date: Optional[datetime]) -> bytes:
     from openpyxl import Workbook
+    from openpyxl.styles import PatternFill, Font, Alignment
 
     wb = Workbook()
-    
-    # Hoja 1: Resumen Agregado
     ws = wb.active
     ws.title = "Resumen"
-    ws.append(["Reporte de Conciliación", tipo_reporte.title()])
-    ws.append([])
-    ws.append(["Periodo", "Desde", "Hasta", "Total Bs", "Total USD", "Conteo"])
 
-    for item in resultados:
+    header_fill = PatternFill(start_color='1e3a8a', end_color='1e3a8a', fill_type='solid')
+    header_font = Font(color='FFFFFF', bold=True)
+    right_align = Alignment(horizontal='right')
+
+    ws.append(["Reporte de Conciliación", tipo_reporte.title()])
+    ws.append(["Generado", datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
+    ws.append(["Periodo", start_date.strftime("%Y-%m-%d") if start_date else "Completo", end_date.strftime("%Y-%m-%d") if end_date else "Completo"])
+    ws.append([])
+
+    sudeban_summary = _agrupar_totales_sudeban(pagos_detalle)
+    ws.append(["Código SUDEBAN", "Banco Origen", "Total Bs", "Total USD", "Conteo"])
+    for cell in ws[5]:
+        cell.fill = header_fill
+        cell.font = header_font
+
+    for row in sudeban_summary:
         ws.append([
-            item["periodo"],
-            item["desde"].strftime("%Y-%m-%d") if item["desde"] else "",
-            item["hasta"].strftime("%Y-%m-%d") if item["hasta"] else "",
-            item["total_bs"],
-            item["total_usd"],
-            item["conteo"],
+            row["sudeban_code"],
+            row["banco_label"],
+            row["total_bs"],
+            row["total_usd"],
+            row["conteo"],
         ])
 
-    # Hoja 2: Detalle de Pagos (Solicitado)
+    ws.append([])
+    ws.append(["Resumen Agregado"])
+    ws.append(["Periodo", "Desde", "Hasta", "Total Bs", "Total USD", "Conteo"])
+    for cell in ws[ws.max_row]:
+        cell.fill = header_fill
+        cell.font = header_font
+
+    for item in resultados:
+        periodo_text = _simplificar_periodo(item["periodo"])
+        ws.append([
+            periodo_text,
+            item["desde"].strftime("%Y-%m-%d") if item["desde"] else "",
+            item["hasta"].strftime("%Y-%m-%d") if item["hasta"] else "",
+            parse_monto_string(item.get("total_bs")),
+            parse_monto_string(item.get("total_usd")),
+            item.get("conteo", 0),
+        ])
+        periodo_cell = ws[f"A{ws.max_row}"]
+        periodo_cell.alignment = Alignment(wrap_text=True, vertical='top')
+
+    totales = _agregar_total_reporte(resultados)
+    ws.append(["Totales", "", "", totales["total_bs"], totales["total_usd"], totales["total_pagos"]])
+
+    for sheet in wb.worksheets:
+        for columna in sheet.columns:
+            max_length = 0
+            column_letter = columna[0].column_letter
+            for cell in columna:
+                if cell.value is not None:
+                    max_length = max(max_length, len(str(cell.value)))
+            sheet.column_dimensions[column_letter].width = min(max_length + 2, 30)
+            if column_letter == 'A':
+                for cell in columna:
+                    if cell.value is not None and isinstance(cell.value, str) and len(cell.value) > 30:
+                        lines = (len(cell.value) - 1) // 30 + 1
+                        current_height = sheet.row_dimensions[cell.row].height or 15
+                        sheet.row_dimensions[cell.row].height = max(current_height, lines * 15)
+
+        # Aplicar formato numérico a columnas de monto en cada hoja
+        for row in sheet.iter_rows(min_row=1, max_row=sheet.max_row):
+            for cell in row:
+                if cell.column_letter in ('C', 'D') and isinstance(cell.value, (int, float)):
+                    cell.number_format = '#,##0.00 "Bs"'
+                if cell.column_letter == 'E' and isinstance(cell.value, (int, float)):
+                    cell.number_format = '#,##0.00'
+
     ws_det = wb.create_sheet(title="Detalle de Pagos")
     ws_det.append(["Referencia", "Banco Origen", "Fecha", "Monto (Bs)", "Tasa ($)", "Monto ($)"])
+    for cell in ws_det[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+
     for p in pagos_detalle:
         ws_det.append([
             p.referencia,
             p.banco,
             p.fecha_registro.strftime("%Y-%m-%d %H:%M") if p.fecha_registro else "N/A",
-            p.monto,
-            p.tasa_cambio,
-            p.monto_usd
+            parse_monto_string(p.monto),
+            parse_monto_string(p.tasa_cambio),
+            parse_monto_string(p.monto_usd),
         ])
 
-    for sheet in wb.worksheets:
-        for columna in sheet.columns:
-            max_length = 0
-            for cell in columna:
-                if cell.value is not None:
-                    max_length = max(max_length, len(str(cell.value)))
-            sheet.column_dimensions[columna[0].column_letter].width = min(max_length + 2, 40)
+    for row in ws_det.iter_rows(min_row=2, max_row=ws_det.max_row):
+        for cell in row:
+            if cell.column_letter == 'D' and isinstance(cell.value, (int, float)):
+                cell.number_format = '#,##0.00 "Bs"'
+                cell.alignment = right_align
+            if cell.column_letter in ('E', 'F') and isinstance(cell.value, (int, float)):
+                cell.number_format = '#,##0.00'
+                cell.alignment = right_align
 
     buffer = io.BytesIO()
     wb.save(buffer)
@@ -1085,80 +1255,124 @@ def _crear_excel_reporte(resultados: List[dict], pagos_detalle: List[models.Pago
 def _crear_pdf_reporte(resultados: List[dict], pagos_detalle: List[models.Pago], tipo_reporte: str, start_date: Optional[datetime], end_date: Optional[datetime]) -> bytes:
     from reportlab.lib.pagesizes import letter
     from reportlab.lib import colors
-    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     styles = getSampleStyleSheet()
+    title_style = styles["Title"]
+    normal_style = styles["Normal"]
+    section_style = ParagraphStyle('SectionHeading', parent=styles['Heading2'], spaceAfter=10, spaceBefore=15)
 
     story = []
-    story.append(Paragraph(f"Reporte de Conciliación - {tipo_reporte.title()}", styles["Title"]))
-    
-    # Solución a error de formato de fecha cuando una es None
+    story.append(Paragraph(f"Reporte de Conciliación Bancaria - {tipo_reporte.title()}", title_style))
+    story.append(Paragraph(f"Generado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", normal_style))
+
     range_parts = []
-    if start_date: range_parts.append(f"Desde: {start_date.strftime('%Y-%m-%d')}")
-    if end_date: range_parts.append(f"Hasta: {end_date.strftime('%Y-%m-%d')}")
+    if start_date:
+        range_parts.append(f"Desde: {start_date.strftime('%Y-%m-%d')}")
+    if end_date:
+        range_parts.append(f"Hasta: {end_date.strftime('%Y-%m-%d')}")
     filtro_texto = " - ".join(range_parts) if range_parts else "Rango: completo"
-    
-    story.append(Paragraph(filtro_texto, styles["Normal"]))
+    story.append(Paragraph(filtro_texto, normal_style))
     story.append(Spacer(1, 15))
 
-    # --- Tabla de Resumen ---
-    story.append(Paragraph("Resumen Agregado", styles["Heading3"]))
-    data = [["Periodo", "Desde", "Hasta", "Total Bs", "Total USD", "Conteo"]]
-    for item in resultados:
-        data.append([
-            item["periodo"],
-            item["desde"].strftime("%Y-%m-%d") if item["desde"] else "",
-            item["hasta"].strftime("%Y-%m-%d") if item["hasta"] else "",
+    sudeban_summary = _agrupar_totales_sudeban(pagos_detalle)
+    story.append(Paragraph("Resumen por Código SUDEBAN", section_style))
+    data_sudeban = [["Código SUDEBAN", "Banco Origen", "Total Bs", "Total USD", "Conteo"]]
+    for item in sudeban_summary:
+        data_sudeban.append([
+            item["sudeban_code"],
+            item["banco_label"],
             f"{item['total_bs']:.2f}",
             f"{item['total_usd']:.2f}",
             str(item["conteo"]),
         ])
+    if len(data_sudeban) == 1:
+        data_sudeban.append(["No hay datos", "", "", "", ""])
 
-    if not resultados:
-        data.append(["No hay datos", "", "", "", "", ""])
+    table_sudeban = Table(data_sudeban, colWidths=[90, 160, 90, 90, 60])
+    style_sudeban = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor('#1e3a8a')),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("ALIGN", (2, 1), (3, -1), "RIGHT"),
+        ("ALIGN", (4, 1), (4, -1), "CENTER"),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
+    ]
+    for row_idx in range(1, len(data_sudeban)):
+        if row_idx % 2 == 1:
+            style_sudeban.append(("BACKGROUND", (0, row_idx), (-1, row_idx), colors.HexColor('#f3f4f6')))
+    table_sudeban.setStyle(TableStyle(style_sudeban))
+    story.append(table_sudeban)
+    story.append(Spacer(1, 20))
 
+    story.append(Paragraph("Resumen Agregado", section_style))
+    periodo_style = ParagraphStyle(
+        'PeriodoCell',
+        parent=normal_style,
+        fontName='Helvetica',
+        fontSize=8,
+        leading=10,
+        wordWrap='CJK',
+    )
+    data = [["Periodo", "Desde", "Hasta", "Total Bs", "Total USD", "Conteo"]]
+    for item in resultados:
+        data.append([
+            Paragraph(_simplificar_periodo(item["periodo"]), periodo_style),
+            item["desde"].strftime("%Y-%m-%d") if item["desde"] else "",
+            item["hasta"].strftime("%Y-%m-%d") if item["hasta"] else "",
+            f"{parse_monto_string(item.get('total_bs')):.2f}",
+            f"{parse_monto_string(item.get('total_usd')):.2f}",
+            str(item.get("conteo", 0)),
+        ])
     totales = _agregar_total_reporte(resultados)
     data.append(["Totales", "", "", f"{totales['total_bs']:.2f}", f"{totales['total_usd']:.2f}", str(totales['total_pagos'])])
 
-    table = Table(data, colWidths=[100, 80, 80, 95, 95, 60])
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.darkblue),
+    table = Table(data, colWidths=[120, 65, 65, 75, 75, 50])
+    style = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor('#1e3a8a')),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("BACKGROUND", (0, -1), (-1, -1), colors.lightgrey),
-    ]))
+        ("ALIGN", (3, 1), (4, -1), "RIGHT"),
+        ("ALIGN", (5, 1), (5, -1), "RIGHT"),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
+    ]
+    for row_idx in range(1, len(data)):
+        if row_idx % 2 == 1:
+            style.append(("BACKGROUND", (0, row_idx), (-1, row_idx), colors.HexColor('#f3f4f6')))
+    table.setStyle(TableStyle(style))
     story.append(table)
     story.append(Spacer(1, 20))
 
-    # --- Tabla de Detalle (Nueva sección solicitada) ---
-    story.append(Paragraph("Detalle Individual de Pagos", styles["Heading3"]))
+    story.append(Paragraph("Detalle Individual de Pagos", section_style))
     data_det = [["Referencia", "Banco", "Fecha", "Monto Bs", "Tasa ($)", "Monto USD"]]
     for p in pagos_detalle:
         data_det.append([
             p.referencia,
-            (p.banco[:12] + '..') if p.banco and len(p.banco) > 12 else p.banco,
+            p.banco or "-",
             p.fecha_registro.strftime("%Y-%m-%d") if p.fecha_registro else "N/A",
-            f"{p.monto:.2f}",
-            f"{p.tasa_cambio:.2f}",
-            f"{p.monto_usd:.2f}"
+            f"{parse_monto_string(p.monto):.2f}",
+            f"{parse_monto_string(p.tasa_cambio):.2f}",
+            f"{parse_monto_string(p.monto_usd):.2f}",
         ])
-
-    if not pagos_detalle:
+    if len(data_det) == 1:
         data_det.append(["Sin movimientos", "-", "-", "-", "-", "-"])
 
-    table_det = Table(data_det, colWidths=[90, 100, 80, 90, 70, 90])
-    table_det.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.darkgreen),
+    table_det = Table(data_det, colWidths=[80, 110, 70, 75, 55, 75])
+    style_det = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor('#1e3a8a')),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
-    ]))
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("ALIGN", (3, 1), (3, -1), "RIGHT"),
+        ("ALIGN", (4, 1), (5, -1), "RIGHT"),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
+    ]
+    for row_idx in range(1, len(data_det)):
+        if row_idx % 2 == 1:
+            style_det.append(("BACKGROUND", (0, row_idx), (-1, row_idx), colors.HexColor('#f3f4f6')))
+    table_det.setStyle(TableStyle(style_det))
     story.append(table_det)
 
     doc.build(story)
@@ -1366,6 +1580,41 @@ async def subir_pago(
     finally:
         if filepath and os.path.exists(filepath) and ('nuevo_pago' not in locals() or not getattr(locals().get('nuevo_pago'), 'id', None)):
             os.remove(filepath)
+
+@app.post("/detectar-banco/")
+async def detectar_banco(
+    file: UploadFile = File(...),
+    auth: bool = Depends(require_api_key)
+):
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Solo se permiten archivos de imagen.")
+
+    temp_file = tempfile.NamedTemporaryFile(suffix=os.path.splitext(file.filename)[1] or ".jpg", delete=False)
+    temp_path = temp_file.name
+    temp_file.close()
+    try:
+        with open(temp_path, "wb") as buffer:
+            while chunk := await file.read(1024 * 1024):
+                buffer.write(chunk)
+
+        resultado = ocr_engine.procesar_imagen(temp_path)
+        if not resultado:
+            raise HTTPException(status_code=500, detail="No se pudo procesar la imagen para detección de banco.")
+
+        return {
+            "banco_predicho": resultado.get("banco_predicho"),
+            "banco_ia": resultado.get("banco_ia"),
+            "sudeban_code": resultado.get("sudeban_code"),
+            "referencia": resultado.get("referencia"),
+            "monto": resultado.get("monto"),
+            "cedula": resultado.get("cedula"),
+            "texto_completo": resultado.get("texto_completo"),
+        }
+    finally:
+        try:
+            os.remove(temp_path)
+        except Exception:
+            pass
 
 # --- 2. RUTA PARA REGISTRO MANUAL (Nueva) ---
 @app.post("/pago-manual/")

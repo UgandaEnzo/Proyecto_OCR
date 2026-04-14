@@ -653,6 +653,16 @@ a {
   object-fit: contain;
 }
 
+.comprobante-preview {
+  display: block;
+  max-width: 280px;
+  width: auto;
+  max-height: 240px;
+  margin-top: 0.75rem;
+  margin-bottom: 0.5rem;
+  object-fit: contain;
+}
+
 .details-content {
   background: rgba(255, 255, 255, 0.03);
   padding: 1rem;

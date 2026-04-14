@@ -7,6 +7,7 @@ import numpy as np
 from PIL import Image
 from dotenv import load_dotenv
 from ocr_utils import engine, normalizar_texto
+import bank_rules
 
 load_dotenv()
 
@@ -45,9 +46,11 @@ def limpiar_datos_ia(texto_ocr):
     1. 'monto': Busca el monto de la operación. Interpreta formatos como "1.500,00" o "Bs. 200" y conviértelo a un número float estándar (ej: 1500.0).
     2. 'referencia': Extrae el número de confirmación o referencia (usualmente 6-12 dígitos).
     3. 'cedula': Extrae la cédula de identidad si está presente.
+    4. 'banco': Si el nombre del banco aparece en el texto, devuélvelo con su nombre completo.
+    5. 'sudeban_code': Extrae cualquier código SUDEBAN de 4 dígitos si está presente.
 
     REGLA CRÍTICA: Responde ÚNICAMENTE con el objeto JSON, sin explicaciones ni texto adicional.
-    Campos requeridos: {"monto": float, "referencia": "string", "cedula": "string" or null}.
+    Campos requeridos: {"monto": float, "referencia": "string", "cedula": "string" or null, "banco": "string" or null, "sudeban_code": "string" or null}.
     """
 
     try:
@@ -77,6 +80,16 @@ def limpiar_monto(valor):
     except:
         return 0.0
 
+def extract_sudeban_code(texto):
+    if not texto:
+        return None
+    for match in re.finditer(r'\b(\d{4})\b', texto):
+        code = match.group(1)
+        if bank_rules.get_bank_by_sudeban_code(code) != "Desconocido":
+            return code
+    return None
+
+
 def procesar_pago_ocr(image_path, aggressive=False):
     """Flujo Principal Optimizado: RapidOCR -> Groq (Extractor Principal)."""
     # 1. Carga de imagen con validación
@@ -87,19 +100,44 @@ def procesar_pago_ocr(image_path, aggressive=False):
             img_cv = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
         except Exception as e:
             print(f"❌ [OCR] Imagen inválida o ilegible: {e}")
-            return {"referencia": "No detectada", "monto": 0.0, "banco": "Desconocido", "texto_completo": ""}
+            return {"referencia": "No detectada", "monto": 0.0, "banco_predicho": "Desconocido", "texto_completo": ""}
 
     # 2. Ejecutar RapidOCR (Extracción de texto base)
     texto_completo = extraer_texto(image_path)
     
     # 3. Procesar texto bruto con IA (Groq) - Ahora es el filtro principal
     ai_data = limpiar_datos_ia(texto_completo)
-    
+    pred_banco_ia = None
+    pred_sudeban = None
+    if ai_data and isinstance(ai_data, dict):
+        pred_banco_ia = ai_data.get("banco")
+        pred_sudeban = ai_data.get("sudeban_code")
+
+    # 4. Detección robusta de banco usando heurísticas y códigos SUDEBAN
+    strategy = bank_rules.get_bank_strategy(texto_completo, img_cv)
+    banco_predicho = strategy.name if strategy else "Desconocido"
+    sudeban_code = pred_sudeban or extract_sudeban_code(texto_completo)
+    if sudeban_code:
+        banco_desde_sudeban = bank_rules.get_bank_by_sudeban_code(sudeban_code)
+        if banco_desde_sudeban and banco_desde_sudeban != "Desconocido":
+            banco_predicho = banco_desde_sudeban
+
+    if pred_banco_ia and isinstance(pred_banco_ia, str) and pred_banco_ia.strip():
+        banco_ia = pred_banco_ia.strip()
+        if banco_ia not in bank_rules.get_available_banks():
+            banco_normalizado = bank_rules.normalize_bank_name(banco_ia)
+            banco_ia = banco_normalizado if banco_normalizado else banco_ia
+    else:
+        banco_ia = None
+
     if ai_data and isinstance(ai_data, dict):
         return {
             "referencia": str(ai_data.get("referencia") or "No detectada"),
             "monto": limpiar_monto(ai_data.get("monto")),
             "cedula": ai_data.get("cedula"),
+            "banco_ia": banco_ia,
+            "banco_predicho": banco_predicho,
+            "sudeban_code": sudeban_code,
             "texto_completo": texto_completo,
             "source": "AI_GROQ"
         }
@@ -107,6 +145,10 @@ def procesar_pago_ocr(image_path, aggressive=False):
     return {
         "referencia": "No detectada",
         "monto": 0.0,
+        "cedula": None,
+        "banco_ia": None,
+        "banco_predicho": banco_predicho,
+        "sudeban_code": sudeban_code,
         "texto_completo": texto_completo,
         "source": "UNKNOWN"
     }
