@@ -138,6 +138,7 @@
                                     <span v-if="p.ruta_imagen">📷 Ver Imagen</span>
                                     <span v-else>📝 Ver Pago</span>
                                 </button>
+                                <button class="btn btn-outline-light" v-if="!p.ruta_imagen" @click="editarPago(p)" title="Editar pago manual">✏️ Editar</button>
                                 <button class="btn btn-outline-light" v-if="p.ruta_imagen" @click="reprocesar(p)" title="Reprocesar OCR">♻ Reprocesar</button>
                                 <button class="btn btn-outline-light" @click="verHistorial(p.id)" title="Ver Historial">🕒 Historial</button>
                                 <button class="btn btn-danger" @click="confirmEliminar(p)">🗑 Eliminar</button>
@@ -345,40 +346,63 @@
             </div>
             <div class="modal-body">
                 <div v-if="uploadError" class="alert alert-danger">{{ uploadError }}</div>
-                <form id="uploadForm">
-                    <div class="mb-3">
-                        <label class="form-label">Selecciona la imagen del pago</label>
-                        <input class="form-control" type="file" name="file" accept="image/*" @change="onUploadFileChange" required>
-                    </div>
-                    <div class="mb-3" v-if="uploadPreviewUrl">
+                <div class="upload-modal-grid">
+                    <div class="upload-preview-column">
                         <label class="form-label">Vista previa del comprobante</label>
-                        <img :src="uploadPreviewUrl" class="img-fluid rounded comprobante-preview" alt="Vista previa del comprobante">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Banco <span class="text-danger">*</span></label>
-                        <select class="form-select" name="banco" v-model="uploadBank" required>
-                            <option value="" disabled>-- Seleccione el Banco --</option>
-                            <option v-for="c in bancosDisponibles" :key="c" :value="c">{{ c }}</option>
-                        </select>
-                        <div class="form-text mt-1" v-if="uploadPredictedBank">
-                            Banco detectado automáticamente: <strong>{{ uploadPredictedBank }}</strong>
-                            <button type="button" class="btn btn-link btn-sm p-0 ms-2" @click="applyDetectedBank">Usar banco detectado</button>
+                        <div class="preview-box">
+                            <template v-if="uploadPreviewUrl">
+                                <img :src="uploadPreviewUrl" alt="Vista previa del comprobante" />
+                            </template>
+                            <template v-else>
+                                <div class="preview-placeholder">
+                                    <div>
+                                        <strong>Imagen de referencia</strong>
+                                        <p class="small text-muted">La imagen se mostrará aquí mientras completas el formulario.</p>
+                                    </div>
+                                </div>
+                            </template>
                         </div>
-                        <div class="form-text mt-1 text-muted" v-else>
-                            Carga una imagen para detectar el banco automáticamente.
-                        </div>
-                        <div class="form-text mt-1" v-if="uploadSudebanCode">
-                            Código SUDEBAN detectado: <strong>{{ uploadSudebanCode }}</strong>
-                        </div>
+                        <p class="form-text mt-2 text-muted">Mantén la imagen siempre visible para ajustar el banco o cliente si la IA se equivoca.</p>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Cliente Recurrente (Opcional)</label>
-                        <select class="form-select" name="cliente_id">
-                            <option value="">-- Ninguno / Cliente Nuevo --</option>
-                            <option v-for="c in clientes" :key="c.id" :value="c.id">{{ c.nombre }} ({{ c.cedula || c.telefono }})</option>
-                        </select>
+                    <div class="upload-form-column">
+                        <form id="uploadForm">
+                            <div class="mb-3">
+                                <label class="form-label">Selecciona la imagen del pago</label>
+                                <input class="form-control" type="file" name="file" accept="image/*" @change="onUploadFileChange" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Banco <span class="text-danger">*</span></label>
+                                <select class="form-select" name="banco" v-model="uploadBank" required>
+                                    <option value="" disabled>-- Seleccione el Banco --</option>
+                                    <option v-for="c in bancosDisponibles" :key="c" :value="c">{{ c }}</option>
+                                </select>
+                                <div class="form-text mt-1" v-if="uploadPredictedBank">
+                                    Banco detectado automáticamente: <strong>{{ uploadPredictedBank }}</strong>
+                                    <button type="button" class="btn btn-link btn-sm p-0 ms-2" @click="applyDetectedBank">Usar banco detectado</button>
+                                </div>
+                                <div class="form-text mt-1 text-muted" v-else>
+                                    Carga una imagen para detectar el banco automáticamente.
+                                </div>
+                                <div class="form-text mt-1" v-if="uploadSudebanCode">
+                                    Código SUDEBAN detectado: <strong>{{ uploadSudebanCode }}</strong>
+                                </div>
+                            </div>
+                            <div class="alert alert-info">
+                                <strong>Validación previa:</strong>
+                                <div v-if="uploadDetectedReferencia">Referencia detectada: <strong>{{ uploadDetectedReferencia }}</strong></div>
+                                <div v-if="uploadDetectedMonto">Monto detectado: <strong>{{ uploadDetectedMonto }}</strong></div>
+                                <div v-if="!uploadDetectedReferencia && !uploadDetectedMonto">La IA está analizando la imagen para extraer referencia y monto.</div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Cliente Recurrente (Opcional)</label>
+                                <select class="form-select" name="cliente_id">
+                                    <option value="">-- Ninguno / Cliente Nuevo --</option>
+                                    <option v-for="c in clientes" :key="c.id" :value="c.id">{{ c.nombre }} ({{ c.cedula || c.telefono }})</option>
+                                </select>
+                            </div>
+                        </form>
                     </div>
-                </form>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" @click="closeUploadModal">Cancelar</button>
@@ -486,7 +510,10 @@
     <div v-if="showImagenModal && pagoSeleccionado" class="modal-overlay" @click.self="closeImagenModal">
         <div class="modal-window modal-xl">
             <div class="modal-header">
-                <h5 class="modal-title">{{ pagoSeleccionado.ruta_imagen ? 'Comprobante de' : 'Pago manual' }} {{ pagoSeleccionado.referencia }}</h5>
+                <div>
+                    <h5 class="modal-title">{{ pagoSeleccionado.ruta_imagen ? 'Comprobante de' : 'Pago manual' }} {{ pagoSeleccionado.referencia }}</h5>
+                    <p class="small text-muted">Vista de comprobante y resumen final de validación</p>
+                </div>
                 <button class="btn-close" @click="closeImagenModal">×</button>
             </div>
             <div class="modal-body">
@@ -503,11 +530,8 @@
                         </template>
                     </div>
                     <div class="details-content">
-                        <div class="d-flex justify-content-between align-items-start mb-3">
-                            <div>
-                                <h4>Detalles del Pago</h4>
-                            </div>
-                            <button v-if="!pagoSeleccionado.ruta_imagen" class="btn btn-warning" @click="editarPago(pagoSeleccionado)">Editar pago</button>
+                        <div class="mb-3">
+                            <h4>Detalles del Pago</h4>
                         </div>
                         <ul class="list-group">
                             <li class="list-group-item">Referencia: <strong>{{ pagoSeleccionado.referencia }}</strong></li>

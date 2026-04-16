@@ -7,6 +7,8 @@ Este proyecto es una solución de backend y panel administrativo construida con 
 
 -   **Carga de pagos por imagen**: administra recibos y comprobantes con extracción OCR.
 -   **OCR + IA**: combinación de RapidOCR y Groq para detectar referencia, monto, banco y datos de pago.
+-   **Detección híbrida de bancos**: detección visual con Groq Vision y validación por OCR para mayor precisión.
+-   **Vista previa Base64 instantánea**: la imagen se renderiza en el navegador y se envía comprimida para evitar cargas excesivas.
 -   **Exportes máximos**: reportes en `PDF` y `XLSX` con periodos `diario`, `semanal`, `quincenal`, `mensual`, `trimestral`, `semestral` y `anual`.
 -   **Normalización de períodos**: el campo `Periodo` se formatea correctamente para evitar desbordes y errores de presentación.
 -   **Conexión BCV robusta**: fallback en 4 niveles para obtener tasa de cambio (API, scraping, DB, env).
@@ -61,6 +63,19 @@ Este proyecto es una solución de backend y panel administrativo construida con 
     pip install -r requirements-dev.txt
     ```
 
+## Versiones recomendadas
+
+Este proyecto se ha probado con las siguientes versiones aproximadas de dependencias:
+
+- `fastapi` 0.118.x
+- `uvicorn[standard]` 0.26.x
+- `pydantic` 2.8.x
+- `sqlalchemy` 2.0.x
+- `openpyxl` 3.1.x
+- `reportlab` 4.x
+- `groq` 1.0.x
+- `httpx` 0.24.x
+
 ## Archivo `.env`
 
 Crea un archivo `.env` en la raíz del proyecto con al menos estas variables:
@@ -68,11 +83,14 @@ Crea un archivo `.env` en la raíz del proyecto con al menos estas variables:
 ```env
 DATABASE_URL="postgresql://user:password@host:port/database"
 GROQ_API_KEY="gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-GROQ_MODEL="llama3-8b-8192"
+GROQ_MODEL="llama-3.2-11b-vision-preview"
 LOG_LEVEL=INFO
 MAX_UPLOAD_MB=10
 ```
 
+> Nota: para detección visual se recomienda `GROQ_MODEL="llama-3.2-11b-vision-preview"`. Este proyecto usa Groq Vision para identificar banco, SUDEBAN, referencia y monto desde la imagen.
+> Si trabajas solo con texto o deseas ahorrar tokens, puedes usar un modelo de texto compatible de Groq.
+>
 > Si no usas `DATABASE_URL`, puedes definir las variables separadas `DB_USER`, `DB_PASS`, `DB_HOST`, `DB_PORT` y `DB_NAME`.
 
 ## Ejecutar en desarrollo
@@ -100,7 +118,7 @@ El proyecto incluye un flujo de build completo con `setup_project.py` y `OcrApp.
 
 El script crea `.venv_build`, instala las dependencias desde `requirements.txt` y `requirements-dev.txt`, y ejecuta PyInstaller para generar `dist\OcrApp.exe`.
 
-> El ejecutable **no incluye** el archivo `.env`, así que debes colocarlo junto al `.exe` en el equipo destino.
+> El ejecutable **no incluye** el archivo `.env`. `run.py` carga el `.env` desde el directorio del ejecutable o desde los padres inmediatos, por lo que debes colocarlo junto al `.exe` o en un directorio superior.
 
 ## Endpoints principales
 
@@ -109,6 +127,7 @@ El script crea `.venv_build`, instala las dependencias desde `requirements.txt` 
 - `GET /reportes/` → devuelve reportes agregados por período
 - `GET /reportes/export/` → exporta reportes en `pdf` o `xlsx`
 - `POST /subir-pago/` → sube comprobante de pago por imagen
+- `POST /detectar-banco-vision/` → detecta banco e intenta leer datos usando Groq Vision + OCR
 - `POST /pago-manual/` → crea pago manual sin imagen
 - `GET /clientes/` → lista clientes
 - `POST /clientes/` → crea cliente

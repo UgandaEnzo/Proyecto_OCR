@@ -6,7 +6,10 @@ from PyInstaller.utils.hooks import collect_all
 
 rapidocr_datas, rapidocr_binaries, rapidocr_hiddenimports = collect_all('rapidocr_onnxruntime')
 
-root_dir = os.path.abspath(os.path.dirname(sys.argv[0]))
+# Cuando PyInstaller ejecuta este spec desde un ejecutable, `sys.argv[0]` es la ruta del spec.
+# Esto evita errores de cálculo del directorio raíz al empaquetar en Windows.
+spec_path = os.path.abspath(sys.argv[0]) if sys.argv and sys.argv[0] else os.path.abspath(os.getcwd())
+root_dir = os.path.abspath(os.path.dirname(spec_path))
 pathex = [root_dir]
 distpath = os.path.join(root_dir, 'dist')
 workpath = os.path.join(root_dir, 'build')
@@ -30,6 +33,7 @@ hidden_imports = [
     'psycopg2',
     'sqlalchemy',
     'dotenv',
+    'multipart',
 ] + rapidocr_hiddenimports
 
 a = Analysis(

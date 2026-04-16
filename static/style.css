@@ -472,6 +472,57 @@ a {
   max-height: calc(92vh - 8rem);
 }
 
+.upload-modal-grid {
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-start;
+  min-height: 360px;
+}
+
+.upload-preview-column {
+  flex: 0 0 40%;
+  min-width: 260px;
+}
+
+.upload-form-column {
+  flex: 1 1 60%;
+}
+
+.preview-box {
+  min-height: 340px;
+  padding: 1rem;
+  border-radius: 1.25rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-box img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 1rem;
+}
+
+.preview-placeholder {
+  width: 100%;
+  min-height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: #a3acc8;
+  padding: 1rem;
+}
+
+@media(max-width: 900px) {
+  .upload-modal-grid {
+    flex-direction: column;
+  }
+}
+
 .modal-xl {
   width: min(100%, 1100px);
 }
@@ -640,10 +691,21 @@ a {
 }
 
 .image-preview-grid {
-  display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(280px, 1fr);
+  display: flex;
   gap: 1rem;
-  align-items: start;
+  align-items: flex-start;
+}
+
+.image-content {
+  flex: 0 0 40%;
+  min-width: 260px;
+}
+
+.details-content {
+  flex: 1 1 60%;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 1rem;
+  border-radius: 1rem;
 }
 
 .image-content img {
@@ -663,10 +725,36 @@ a {
   object-fit: contain;
 }
 
-.details-content {
-  background: rgba(255, 255, 255, 0.03);
-  padding: 1rem;
-  border-radius: 1rem;
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 96px;
+  padding: 0.5rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #fff;
+}
+
+.status-badge.badge-success {
+  background: #21c55d;
+}
+
+.status-badge.badge-warning {
+  background: #f59e0b;
+}
+
+.status-badge.badge-danger {
+  background: #ef4444;
+}
+
+.status-badge.badge-muted {
+  background: rgba(255, 255, 255, 0.14);
+  color: #e5e7eb;
 }
 
 .stats-grid {

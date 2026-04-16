@@ -36,8 +36,11 @@ createApp({
             uploadError: '',
             uploadFileSelected: false,
             uploadPreviewUrl: '',
+            uploadBase64: '',
             uploadPredictedBank: '',
             uploadSudebanCode: '',
+            uploadDetectedReferencia: '',
+            uploadDetectedMonto: '',
             procesandoSubida: false,
             manualItem: {
                 banco: '',
@@ -211,19 +214,25 @@ createApp({
         },
         async detectarBancoPreview(file) {
             if (!file || !file.type.startsWith('image/')) return;
-            const formData = new FormData();
-            formData.append('file', file);
+            if (!this.uploadBase64) return;
+            this.uploadDetectedReferencia = '';
+            this.uploadDetectedMonto = '';
             try {
-                const resp = await fetch('/detectar-banco/', {
+                const resp = await fetch('/detectar-banco-vision/', {
                     method: 'POST',
-                    headers: this.getAuthHeaders(),
-                    body: formData,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...this.getAuthHeaders(),
+                    },
+                    body: JSON.stringify({ image_base64: this.uploadBase64 }),
                 });
                 const data = await resp.json();
                 if (resp.ok) {
                     const predicted = data.banco_predicho || data.banco_ia || '';
                     this.uploadPredictedBank = predicted && predicted !== 'Desconocido' ? predicted : '';
                     this.uploadSudebanCode = data.sudeban_code || '';
+                    this.uploadDetectedReferencia = data.referencia || '';
+                    this.uploadDetectedMonto = data.monto || '';
                     if (!this.uploadBank && this.uploadPredictedBank && this.bancosDisponibles.includes(this.uploadPredictedBank)) {
                         this.uploadBank = this.uploadPredictedBank;
                     }
@@ -232,25 +241,91 @@ createApp({
                 console.warn('No se pudo detectar banco automáticamente', err);
             }
         },
+        async compressImageToBase64(file, maxSide = 900, quality = 0.72) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                const img = new Image();
+
+                reader.onload = () => {
+                    if (typeof reader.result !== 'string') {
+                        return reject(new Error('No se pudo leer la imagen.'));
+                    }
+                    img.onload = () => {
+                        const width = img.naturalWidth;
+                        const height = img.naturalHeight;
+                        const ratio = Math.min(1, maxSide / Math.max(width, height));
+                        const canvas = document.createElement('canvas');
+                        canvas.width = Math.round(width * ratio);
+                        canvas.height = Math.round(height * ratio);
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        const compressed = canvas.toDataURL('image/jpeg', quality);
+                        const commaIndex = compressed.indexOf(',');
+                        resolve(commaIndex >= 0 ? compressed.slice(commaIndex + 1) : compressed);
+                    };
+                    img.onerror = reject;
+                    img.src = reader.result;
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        },
         onUploadFileChange(event) {
             const file = event.target.files?.[0];
             this.uploadFileSelected = !!file;
-            if (this.uploadPreviewUrl) {
-                URL.revokeObjectURL(this.uploadPreviewUrl);
-                this.uploadPreviewUrl = '';
-            }
             this.uploadPredictedBank = '';
             this.uploadSudebanCode = '';
+            this.uploadDetectedReferencia = '';
+            this.uploadDetectedMonto = '';
             this.uploadError = '';
+            this.uploadBase64 = '';
             if (file) {
-                this.uploadPreviewUrl = URL.createObjectURL(file);
-                this.detectarBancoPreview(file);
+                const reader = new FileReader();
+                reader.onload = async () => {
+                    const result = reader.result;
+                    if (typeof result === 'string') {
+                        this.uploadPreviewUrl = result;
+                        try {
+                            this.uploadBase64 = await this.compressImageToBase64(file);
+                        } catch (err) {
+                            const commaIndex = result.indexOf(',');
+                            this.uploadBase64 = commaIndex >= 0 ? result.slice(commaIndex + 1) : result;
+                        }
+                        this.detectarBancoPreview(file);
+                    }
+                };
+                reader.readAsDataURL(file);
+            } else {
+                this.uploadPreviewUrl = '';
+                this.uploadBase64 = '';
             }
         },
         applyDetectedBank() {
             if (this.uploadPredictedBank && this.bancosDisponibles.includes(this.uploadPredictedBank)) {
                 this.uploadBank = this.uploadPredictedBank;
             }
+        },
+        getEstadoBadgeClass(estado) {
+            if (!estado) return 'badge-muted';
+            const normalized = String(estado).toLowerCase();
+            if (normalized.includes('verificado') || normalized.includes('ok') || normalized.includes('correcto')) {
+                return 'badge-success';
+            }
+            if (normalized.includes('falso') || normalized.includes('rechazado') || normalized.includes('error')) {
+                return 'badge-danger';
+            }
+            return 'badge-warning';
+        },
+        getEstadoLabel(estado) {
+            if (!estado) return 'Sin estado';
+            const normalized = String(estado).toLowerCase();
+            if (normalized.includes('verificado') || normalized.includes('ok') || normalized.includes('correcto')) {
+                return 'Verificado';
+            }
+            if (normalized.includes('falso') || normalized.includes('rechazado') || normalized.includes('error')) {
+                return 'Falso';
+            }
+            return 'Pendiente';
         },
         closeUploadModal() {
             if (this.uploadPreviewUrl) {
@@ -264,6 +339,8 @@ createApp({
             this.uploadPreviewUrl = '';
             this.uploadPredictedBank = '';
             this.uploadSudebanCode = '';
+            this.uploadDetectedReferencia = '';
+            this.uploadDetectedMonto = '';
         },
         abrirModalManual() {
             this.editandoPagoId = null;

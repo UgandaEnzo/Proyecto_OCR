@@ -10,9 +10,13 @@ import traceback
 import io
 import tempfile
 import sqlite3
+import base64
+import json
 from enum import Enum
 from pathlib import Path
 from typing import Optional, List
+
+from PIL import Image
 from dotenv import load_dotenv, set_key
 from contextlib import asynccontextmanager
 
@@ -153,6 +157,9 @@ class EstadoPago(str, Enum):
 
 class EstadoUpdate(BaseModel):
     estado: EstadoPago
+
+class VisionBankDetectionRequest(BaseModel):
+    image_base64: str
 
 # Modelos para Clientes
 class ClienteBase(BaseModel):
@@ -1059,6 +1066,26 @@ def _simplificar_periodo(periodo: Optional[object]) -> str:
     return str(periodo)
 
 
+def _limpiar_periodo_texto(periodo: Optional[object]) -> str:
+    if periodo is None:
+        return ""
+    if isinstance(periodo, datetime):
+        return periodo.strftime("%d-%m-%Y")
+    if isinstance(periodo, str):
+        texto = periodo.strip()
+        if not texto:
+            return ""
+        match = re.search(r"(\d{2})[-/](\d{2})[-/](\d{4})", texto)
+        if match:
+            return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
+        match = re.search(r"(\d{4})-(\d{2})-(\d{2})", texto)
+        if match:
+            return f"{match.group(3)}-{match.group(2)}-{match.group(1)}"
+        texto = texto.splitlines()[0].strip()
+        return texto if len(texto) <= 32 else texto[:32] + "..."
+    return str(periodo)
+
+
 def _query_pagos_detalle(db: Session, fecha_inicio: Optional[datetime], fecha_fin: Optional[datetime]) -> List[models.Pago]:
     """Obtiene la lista detallada de pagos para el reporte."""
     query = db.query(models.Pago)
@@ -1183,7 +1210,7 @@ def _crear_excel_reporte(resultados: List[dict], pagos_detalle: List[models.Pago
         cell.font = header_font
 
     for item in resultados:
-        periodo_text = _simplificar_periodo(item["periodo"])
+        periodo_text = _limpiar_periodo_texto(item["periodo"])
         ws.append([
             periodo_text,
             item["desde"].strftime("%Y-%m-%d") if item["desde"] else "",
@@ -1320,7 +1347,7 @@ def _crear_pdf_reporte(resultados: List[dict], pagos_detalle: List[models.Pago],
     data = [["Periodo", "Desde", "Hasta", "Total Bs", "Total USD", "Conteo"]]
     for item in resultados:
         data.append([
-            Paragraph(_simplificar_periodo(item["periodo"]), periodo_style),
+            Paragraph(_limpiar_periodo_texto(item["periodo"]), periodo_style),
             item["desde"].strftime("%Y-%m-%d") if item["desde"] else "",
             item["hasta"].strftime("%Y-%m-%d") if item["hasta"] else "",
             f"{parse_monto_string(item.get('total_bs')):.2f}",
@@ -1615,6 +1642,137 @@ async def detectar_banco(
             os.remove(temp_path)
         except Exception:
             pass
+
+@app.post("/detectar-banco-vision/")
+async def detectar_banco_vision(
+    data: VisionBankDetectionRequest,
+    auth: bool = Depends(require_api_key)
+):
+    image_base64 = data.image_base64.strip()
+    if not image_base64:
+        raise HTTPException(status_code=400, detail="Se requiere image_base64.")
+
+    try:
+        image_data = base64.b64decode(image_base64.split(",", 1)[-1])
+    except Exception:
+        raise HTTPException(status_code=400, detail="Base64 inválido para la imagen.")
+
+    temp_file = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    temp_path = temp_file.name
+    temp_file.close()
+    try:
+        with open(temp_path, "wb") as buffer:
+            buffer.write(image_data)
+
+        resultado = ocr_engine.procesar_imagen(temp_path) or {}
+        groq_info = _detectar_banco_con_groq(image_data)
+
+        banco_predicho = groq_info.get("banco_predicho") or resultado.get("banco_predicho") or resultado.get("banco_ia")
+        sudeban_code = groq_info.get("sudeban_code") or resultado.get("sudeban_code")
+
+        return {
+            "banco_predicho": banco_predicho,
+            "banco_ia": resultado.get("banco_ia"),
+            "sudeban_code": sudeban_code,
+            "referencia": resultado.get("referencia"),
+            "monto": resultado.get("monto"),
+            "cedula": resultado.get("cedula"),
+            "texto_completo": resultado.get("texto_completo"),
+        }
+    finally:
+        try:
+            os.remove(temp_path)
+        except Exception:
+            pass
+
+
+def _parse_groq_bank_response(texto: str) -> dict:
+    if not texto:
+        return {}
+    texto = texto.strip()
+    try:
+        encontrado = re.search(r"\{.*\}", texto, re.S)
+        if encontrado:
+            return json.loads(encontrado.group(0))
+    except Exception:
+        pass
+
+    parsed = {}
+    match = re.search(r'"?banco_predicho"?\s*[:=]\s*"?([^"\'\n]+)', texto, re.I)
+    if match:
+        parsed["banco_predicho"] = match.group(1).strip()
+    match = re.search(r'"?sudeban_code"?\s*[:=]\s*"?([^"\'\n]+)', texto, re.I)
+    if match:
+        parsed["sudeban_code"] = match.group(1).strip()
+    if not parsed:
+        parsed["banco_predicho"] = texto.splitlines()[0].strip()
+    return parsed
+
+
+def _comprimir_imagen_para_groq(image_bytes: bytes, max_side: int = 720, quality: int = 60) -> bytes:
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as img:
+            img = img.convert("RGB")
+            max_dimension = max(img.width, img.height)
+            if max_dimension > max_side:
+                scale = max_side / max_dimension
+                img = img.resize(
+                    (max(1, int(img.width * scale)), max(1, int(img.height * scale))),
+                    Image.Resampling.LANCZOS,
+                )
+            with io.BytesIO() as output:
+                img.save(output, format="JPEG", quality=quality, optimize=True)
+                return output.getvalue()
+    except Exception as e:
+        logger.debug("No se pudo comprimir la imagen para Groq, se usa el original: %s", e)
+        return image_bytes
+
+
+def _detectar_banco_con_groq(image_bytes: bytes) -> dict:
+    api_key = os.getenv("GROQ_API_KEY", "").strip()
+    if not api_key:
+        return {}
+
+    try:
+        from groq import Groq
+        client = Groq(api_key=api_key)
+        image_bytes_for_groq = _comprimir_imagen_para_groq(image_bytes)
+        image_b64 = base64.b64encode(image_bytes_for_groq).decode("utf-8")
+        prompt_text = (
+            "Eres un experto en reconocer bancos venezolanos a partir de comprobantes de pago. "
+            "Devuelve un JSON válido con los campos banco_predicho y sudeban_code. "
+            "Si no puedes identificar el banco, usa Desconocido. "
+            "Responde únicamente con JSON válido, sin texto adicional."
+        )
+        response = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": image_b64}},
+                        {"type": "text", "text": prompt_text},
+                    ],
+                }
+            ],
+            model=os.getenv("GROQ_MODEL", "llama-3.2-11b-vision-preview"),
+            temperature=0.0,
+            max_tokens=150,
+        )
+        content = ""
+        if getattr(response, 'choices', None):
+            choice = response.choices[0]
+            message = getattr(choice, 'message', None)
+            if isinstance(message, dict):
+                content = message.get('content', '')
+            elif hasattr(message, 'content'):
+                content = message.content or ''
+            else:
+                content = str(message or '')
+        return _parse_groq_bank_response(content)
+    except Exception as e:
+        logger.warning("Groq Vision fallo: %s", e)
+        return {}
+
 
 # --- 2. RUTA PARA REGISTRO MANUAL (Nueva) ---
 @app.post("/pago-manual/")

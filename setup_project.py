@@ -19,7 +19,7 @@ def setup_and_build():
         print(f"Error: Se requiere Python 3.10 o superior. Detectado: {sys.version.split()[0]}")
         return
 
-    project_dir = os.path.dirname(os.path.abspath(__file__))
+    project_dir = os.path.abspath(os.path.dirname(__file__))
     build_venv_dir = os.environ.get('PROJECT_BUILD_VENV', os.path.join(project_dir, ".venv_build"))
     build_venv_dir = os.path.abspath(build_venv_dir)
     python_venv = os.path.join(build_venv_dir, "Scripts", "python.exe") if os.name == 'nt' else os.path.join(build_venv_dir, "bin", "python")
@@ -58,9 +58,12 @@ def setup_and_build():
     if os.path.exists(requirements_dev_txt):
         if not run_command([python_venv, '-m', 'pip', 'install', '-r', requirements_dev_txt], "Instalando dependencias de desarrollo", cwd=project_dir):
             return
+    else:
+        print("Archivo requirements-dev.txt no encontrado. Se omiten dependencias de desarrollo.")
 
     print("Ejecutando PyInstaller...")
     if os.path.exists(spec_path):
+        print(f"Usando spec: {spec_path}")
         if not run_command([python_venv, '-m', 'PyInstaller', '--clean', spec_path], "Compilando desde OcrApp.spec", cwd=project_dir):
             return
     else:
@@ -76,6 +79,8 @@ def setup_and_build():
             '--hidden-import',
             'rapidocr_onnxruntime',
             '--hidden-import',
+            'onnxruntime',
+            '--hidden-import',
             'PIL',
             '--hidden-import',
             'numpy',
@@ -83,6 +88,10 @@ def setup_and_build():
             'openpyxl',
             '--hidden-import',
             'reportlab',
+            '--hidden-import',
+            'httpx',
+            '--hidden-import',
+            'dotenv',
             '--add-data',
             f"static{sep}static",
             'run.py',

@@ -99,3 +99,8 @@
 2026-04-14 18:18:16,705 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
 2026-04-14 18:24:54,937 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
 2026-04-14 18:24:54,939 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-04-16 15:56:08,841 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-04-16 15:56:08,842 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-04-16 15:56:30,842 WARNING ocr_api - Groq Vision fallo: Error code: 413 - {'error': {'message': 'Request too large for model `llama-3.3-70b-versatile` in organization `org_01kjkk21x2ecntha5zz24yt998` service tier `on_demand` on tokens per minute (TPM): Limit 12000, Requested 30219, please reduce your message size and try again. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}
+2026-04-16 17:22:29,243 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-04-16 17:22:29,244 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
