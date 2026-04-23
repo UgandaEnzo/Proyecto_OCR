@@ -1,5 +1,3 @@
-import os
-import cv2
 import unicodedata
 from dotenv import load_dotenv
 from rapidocr_onnxruntime import RapidOCR

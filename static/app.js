@@ -62,6 +62,8 @@ createApp({
             cargandoHistorial: false,
             cargandoHistorialCliente: false,
             showGestionModal: false,
+            showApiModal: false,
+            appApiKey: '',
             gestionTab: 'ia',
             gestionState: 'offline',
             gestionApiKey: '',
@@ -373,12 +375,12 @@ createApp({
                 return;
             }
             formData.set('banco', this.uploadBank);
-            this.procesandoSubida = true;
-            try {
-                if (!formData.get('cliente_id')) {
+            if (!formData.get('cliente_id')) {
                 formData.delete('cliente_id');
             }
-            const resp = await fetch('/subir-pago/', {
+            this.procesandoSubida = true;
+            try {
+                const resp = await fetch('/subir-pago/', {
                     method: 'POST',
                     headers: this.getAuthHeaders(),
                     body: formData,
@@ -704,6 +706,22 @@ createApp({
             await this.cargarCredenciales();
             await this.cargarGestionClientesSummary();
         },
+        async abrirConfigApi() {
+            this.appApiKey = localStorage.getItem('apiKeyConciliacion') || '';
+            this.showApiModal = true;
+        },
+        guardarAppApiKey() {
+            if (!this.appApiKey.trim()) {
+                this.showToast('La API Key no puede estar vacía', 'warning');
+                return;
+            }
+            localStorage.setItem('apiKeyConciliacion', this.appApiKey.trim());
+            this.showToast('API Key guardada correctamente', 'success');
+            this.closeApiModal();
+        },
+        closeApiModal() {
+            this.showApiModal = false;
+        },
         closeGestionModal() {
             this.showGestionModal = false;
         },
@@ -925,7 +943,7 @@ createApp({
             }
         },
         promptApiKey() {
-            this.abrirGestion();
+            this.abrirConfigApi();
         },
         getAuthHeaders() {
             const apiKey = localStorage.getItem('apiKeyConciliacion');
@@ -939,7 +957,7 @@ createApp({
             } catch (err) {
                 this.showToast('Error al cargar bancos', 'danger');
             }
-        },
+        }
     },
     mounted() {
         this.cargar(1);

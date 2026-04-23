@@ -1,7 +1,4 @@
 from .base_bank import BankStrategy
-import cv2
-import numpy as np
-from ocr_utils import extraer_texto_de_imagen_cv2
 import re
 
 class MercantilStrategy(BankStrategy):

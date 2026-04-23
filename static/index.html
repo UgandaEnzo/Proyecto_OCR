@@ -21,7 +21,7 @@
                 <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a2 2 0 0 1 2 2v1.2a7 7 0 0 1 2.4 1.4l0.8-0.8a2 2 0 0 1 2.8 2.8l-0.8 0.8a7 7 0 0 1 1.4 2.4H20a2 2 0 1 1 0 4h-1.2a7 7 0 0 1-1.4 2.4l0.8 0.8a2 2 0 0 1-2.8 2.8l-0.8-0.8a7 7 0 0 1-2.4 1.4V20a2 2 0 1 1-4 0v-1.2a7 7 0 0 1-2.4-1.4l-0.8 0.8a2 2 0 0 1-2.8-2.8l0.8-0.8a7 7 0 0 1-1.4-2.4H4a2 2 0 1 1 0-4h1.2a7 7 0 0 1 1.4-2.4l-0.8-0.8a2 2 0 1 1 2.8-2.8l0.8 0.8A7 7 0 0 1 10 5.2V4a2 2 0 0 1 2-2z" fill="currentColor"/></svg>
                 Gestión
             </button>
-            <button class="btn btn-outline-light" @click="abrirGestion" title="Configurar API Key">
+            <button class="btn btn-outline-light" @click="abrirConfigApi" title="Configurar API Key">
                 <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a5 5 0 0 1 5 5v3.5a5 5 0 0 1 1.7 3.8 5 5 0 1 1-10 0A5 5 0 0 1 7 10.5V7a5 5 0 0 1 5-5zm1 16.9V21h-2v-2.1a7.002 7.002 0 0 1-6-6.9h2a5 5 0 0 0 10 0h2a7.002 7.002 0 0 1-6 6.9z" fill="currentColor"/></svg>
                 Configurar API
             </button>
@@ -334,6 +334,28 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" @click="closeGestionModal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <div v-if="showApiModal" class="modal-overlay" @click.self="closeApiModal">
+        <div class="modal-window modal-md">
+            <div class="modal-header">
+                <h5 class="modal-title">Configurar API Key</h5>
+                <button class="btn-close" @click="closeApiModal">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">API Key de la aplicación</label>
+                    <input type="text" class="form-control" v-model="appApiKey" placeholder="Ingresa tu API Key aquí">
+                </div>
+                <div class="text-muted small">
+                    {{ appApiKey ? 'La API Key será usada para las llamadas protegidas del frontend.' : 'Ingresa una API Key para autenticar las solicitudes con x-api-key.' }}
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @click="closeApiModal">Cerrar</button>
+                <button class="btn btn-primary" @click="guardarAppApiKey">Guardar API Key</button>
             </div>
         </div>
     </div>

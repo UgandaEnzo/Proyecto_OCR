@@ -53,3 +53,11 @@ class TasaCambio(Base):
     proveedor = Column(String, default="BCV")
     monto_tasa = Column(Float, nullable=False)
     fecha_actualizacion = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ConfiguracionSistema(Base):
+    __tablename__ = "configuracion_sistema"
+
+    id = Column(Integer, primary_key=True, index=True)
+    clave = Column(String, unique=True, index=True, nullable=False)
+    valor = Column(String, nullable=True)

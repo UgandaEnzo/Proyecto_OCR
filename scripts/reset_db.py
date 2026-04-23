@@ -1,7 +1,6 @@
 import sys
 import os
 import argparse
-from sqlalchemy import text
 
 # Agregar el directorio raíz al path para poder importar database y models
 current_dir = os.path.dirname(os.path.abspath(__file__))

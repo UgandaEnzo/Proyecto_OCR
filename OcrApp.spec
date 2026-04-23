@@ -29,11 +29,10 @@ hidden_imports = [
     'starlette',
     'pydantic',
     'uvicorn',
-    'jinja2',
+    'dotenv',
     'psycopg2',
     'sqlalchemy',
-    'dotenv',
-    'multipart',
+    'alembic',
 ] + rapidocr_hiddenimports
 
 a = Analysis(
@@ -71,3 +70,4 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
+

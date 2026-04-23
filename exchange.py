@@ -105,7 +105,7 @@ async def fetch_tasa_scraping() -> TasaBCV:
             resp = await client.get(url)
             resp.raise_for_status()
             html = resp.text
-    except httpx.HTTPError as e:
+    except httpx.HTTPError:
         if not skip_ssl:
             # Mlveria para entornos con CA desactualizada: reintentar sin verificación SSL
             async with httpx.AsyncClient(timeout=10.0, verify=False, headers={"User-Agent": "Mozilla/5.0"}) as client:
@@ -195,7 +195,7 @@ async def get_tasa_bcv(db: Session) -> TasaBCV:
         res = await fetch_tasa_api()
         persist_tasa(db, res["tasa"], res["origen"])
         return res
-    except Exception as e:
+    except Exception:
         # Retener logs en main.py
         pass
 

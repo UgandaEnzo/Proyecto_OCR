@@ -6,7 +6,7 @@ from groq import Groq
 import numpy as np
 from PIL import Image
 from dotenv import load_dotenv
-from ocr_utils import engine, normalizar_texto
+from ocr_utils import engine
 import bank_rules
 
 load_dotenv()
