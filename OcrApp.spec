@@ -33,6 +33,7 @@ hidden_imports = [
     'psycopg2',
     'sqlalchemy',
     'alembic',
+    'alembic.config',
 ] + rapidocr_hiddenimports
 
 a = Analysis(

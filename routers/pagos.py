@@ -124,6 +124,18 @@ def listar_pagos(q: Optional[str]=None, banco: Optional[str]=None, page: int=1, 
         page = 1
     skip = (page - 1) * size
     pagos = query.options(joinedload(models.Pago.cliente)).order_by(desc(models.Pago.id)).offset(skip).limit(size).all()
+
+    if pagos:
+        pago_ids = [p.id for p in pagos]
+        chatbot_ids = {
+            row.pago_id
+            for row in db.query(models.PagoHistory.pago_id)
+                     .filter(models.PagoHistory.pago_id.in_(pago_ids), models.PagoHistory.accion == 'create_chatbot')
+                     .all()
+        }
+        for pago in pagos:
+            setattr(pago, 'es_chatbot', pago.id in chatbot_ids)
+
     total = None
     if os.getenv('FORCE_EXACT_COUNT', 'false').lower() == 'true':
         total = query.count()
@@ -223,6 +235,143 @@ async def subir_pago(file: Optional[UploadFile]=File(None), banco: str=Form(...)
         if filepath and os.path.exists(filepath) and ('nuevo_pago' not in locals() or not getattr(locals().get('nuevo_pago'), 'id', None)):
             os.remove(filepath)
 
+@router.post('/registrar-pago-confirmado/')
+async def registrar_pago_confirmado(
+    file: UploadFile = File(...),
+    referencia: str = Form(...),
+    banco: str = Form(...),
+    monto: float = Form(...),
+    banco_destino: Optional[str] = Form(None),
+    cliente_id: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    auth: bool = Depends(require_api_key)
+):
+    """
+    Registra un pago con datos YA CONFIRMADOS (por ejemplo desde n8n/Telegram)
+    y guarda la imagen, SIN pasar por el motor OCR de nuevo.
+    """
+    filepath = None
+    try:
+        # Validación de cliente
+        if cliente_id == '':
+            cliente_id = None
+        elif cliente_id is not None:
+            try:
+                cliente_id = int(cliente_id)
+            except ValueError:
+                raise HTTPException(status_code=422, detail='cliente_id debe ser un entero válido o vacío.')
+                
+        # Normalizar datos
+        banco = banco.strip()
+        referencia = referencia.strip()
+        if monto <= 0:
+            raise HTTPException(status_code=400, detail='El monto debe ser mayor a cero.')
+            
+        if banco not in bank_rules.get_available_banks():
+            try:
+                estrategia = bank_rules.get_bank_strategy(banco)
+                if estrategia and estrategia.name and (estrategia.name != 'Desconocido'):
+                    banco = estrategia.name
+            except Exception:
+                pass
+
+        # Validar duplicados lógicos ANTES de guardar imagen
+        pago_existente = db.query(models.Pago).filter(
+            models.Pago.referencia == referencia, 
+            models.Pago.banco == banco, 
+            models.Pago.monto == monto
+        ).first()
+        if pago_existente:
+            return JSONResponse(content={
+                'mensaje': f'Error: Ya existe un pago con la misma referencia ({referencia}), banco ({banco}) y monto.'
+            }, status_code=409)
+
+        # Guardar archivo físico
+        if not file.content_type or not file.content_type.startswith('image/'):
+            raise HTTPException(status_code=400, detail='Solo se permiten archivos de imagen.')
+            
+        max_upload_mb = int(os.getenv('MAX_UPLOAD_MB', '10'))
+        max_bytes = max_upload_mb * 1024 * 1024
+        
+        filename = f'{uuid.uuid4().hex}_{os.path.basename(file.filename)}'
+        filepath = str(uploads_dir / filename)
+        
+        written_bytes = 0
+        with open(filepath, 'wb') as buffer:
+            while (chunk := (await file.read(1024 * 1024))):
+                written_bytes += len(chunk)
+                if written_bytes > max_bytes:
+                    raise HTTPException(status_code=413, detail=f'Archivo demasiado grande (máx {max_upload_mb}MB)')
+                buffer.write(chunk)
+                
+        # Hash y deduplicación por archivo
+        sha256_hash = hashlib.sha256()
+        with open(filepath, 'rb') as f:
+            for byte_block in iter(lambda: f.read(4096), b''):
+                sha256_hash.update(byte_block)
+        file_hash_str = sha256_hash.hexdigest()
+        
+        existing_by_hash = db.query(models.Pago).filter(models.Pago.file_hash == file_hash_str).first()
+        if existing_by_hash:
+            return JSONResponse(content={
+                'mensaje': 'Archivo duplicado detectado (hash). Ya existe un pago con este archivo.',
+                'id_existente': existing_by_hash.id,
+                'referencia': existing_by_hash.referencia
+            }, status_code=409)
+
+        # Conversión a USD
+        tasa_info = await get_tasa_bcv(db)
+        tasa_actual = float(tasa_info['tasa'])
+        monto_usd_calc = round(monto / tasa_actual, 2) if tasa_actual > 0 else 0.0
+
+        # Guardar en DB
+        nuevo_pago = models.Pago(
+            referencia=referencia,
+            banco=banco,
+            banco_destino=banco_destino,
+            monto=monto,
+            ruta_imagen=filepath,
+            file_hash=file_hash_str,
+            cliente_id=cliente_id,
+            tasa_momento=tasa_actual,
+            tasa_cambio=tasa_actual,
+            monto_usd=monto_usd_calc
+        )
+        
+        try:
+            db.add(nuevo_pago)
+            db.commit()
+            db.refresh(nuevo_pago)
+        except sa_exc.IntegrityError:
+            db.rollback()
+            existing = db.query(models.Pago).filter(models.Pago.file_hash == file_hash_str).first()
+            if existing:
+                return JSONResponse(content={
+                    'mensaje': 'Archivo duplicado detectado (hash). Ya existe un pago con este archivo.',
+                    'id_existente': existing.id,
+                    'referencia': existing.referencia
+                }, status_code=409)
+            raise
+
+        detalles_audit = f'Creado vía bot (n8n). Ref: {referencia}. Banco: {banco}'
+        if banco_destino:
+            detalles_audit += f' -> Destino: {banco_destino}'
+        registrar_auditoria(db, pago_id=nuevo_pago.id, accion='create_chatbot', detalles=detalles_audit)
+        
+        return JSONResponse(content={'mensaje': 'Pago registrado correctamente por el bot', 'id': nuevo_pago.id}, status_code=200)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f'Error en /registrar-pago-confirmado/: {e}')
+        raise HTTPException(status_code=500, detail='Error interno al registrar el pago confirmado.')
+    finally:
+        if filepath and os.path.exists(filepath) and ('nuevo_pago' not in locals() or not getattr(locals().get('nuevo_pago'), 'id', None)):
+            try:
+                os.remove(filepath)
+            except Exception:
+                pass
+
 @router.post('/pago-manual/')
 async def crear_pago_manual(dato: schemas.PagoManual, db: Session=Depends(get_db)):
     try:
@@ -261,22 +410,34 @@ async def actualizar_pago_manual(pago_id: int, datos: schemas.PagoManual, db: Se
     pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
     if not pago:
         raise HTTPException(status_code=404, detail='Pago no encontrado')
-    if pago.ruta_imagen:
-        raise HTTPException(status_code=400, detail='Solo se pueden editar pagos manuales sin imagen.')
+        
+    es_chatbot = db.query(models.PagoHistory).filter(
+        models.PagoHistory.pago_id == pago.id, 
+        models.PagoHistory.accion == 'create_chatbot'
+    ).first()
+    
+    if pago.ruta_imagen and not es_chatbot:
+        raise HTTPException(status_code=400, detail='Solo se pueden editar pagos manuales sin imagen o pagos registrados por el ChatBot.')
     if not datos.banco or not datos.referencia or datos.monto is None:
         raise HTTPException(status_code=400, detail='Banco, referencia y monto son obligatorios. Asegúrate de completar todos los campos y que el monto sea mayor a cero.')
+
     pago.banco = datos.banco.strip()
-    pago.referencia = datos.referencia.strip()
-    pago.monto = datos.monto
     pago.cliente_id = datos.cliente_id
-    tasa_info = await get_tasa_bcv(db)
-    nueva_tasa = float(tasa_info['tasa'])
-    pago.tasa_momento = nueva_tasa
-    pago.tasa_cambio = nueva_tasa
-    pago.monto_usd = round(datos.monto / nueva_tasa, 2) if nueva_tasa > 0 else 0.0
+
+    if not (pago.ruta_imagen and es_chatbot):
+        pago.referencia = datos.referencia.strip()
+        pago.monto = datos.monto
+        tasa_info = await get_tasa_bcv(db)
+        nueva_tasa = float(tasa_info['tasa'])
+        pago.tasa_momento = nueva_tasa
+        pago.tasa_cambio = nueva_tasa
+        pago.monto_usd = round(datos.monto / nueva_tasa, 2) if nueva_tasa > 0 else 0.0
+        registrar_auditoria(db, pago_id=pago.id, accion='update_manual', detalles=f'Pago manual editado: ref {pago.referencia}, monto {pago.monto}, banco {pago.banco}')
+    else:
+        registrar_auditoria(db, pago_id=pago.id, accion='update_manual', detalles=f'Pago bot editado: banco {pago.banco}, cliente {pago.cliente_id}')
+
     db.commit()
     db.refresh(pago)
-    registrar_auditoria(db, pago_id=pago.id, accion='update_manual', detalles=f'Pago manual editado: ref {pago.referencia}, monto {pago.monto}, banco {pago.banco}')
     return pago
 
 @router.post('/reprocesar/{pago_id}')

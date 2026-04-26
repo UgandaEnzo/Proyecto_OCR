@@ -1,0 +1,16 @@
+MEJORAS PENDIENTES DEL SISTEMA
+=================================
+
+3. Bloqueos asíncronos en IA:
+En la ruta `/IA/consultar/` y en otras partes donde se usa Groq, se está inicializando el cliente de forma síncrona: `client = Groq()`. FastAPI está diseñado para ser asíncrono. Al usar un cliente síncrono para llamadas de red (que pueden tomar varios segundos), todo el servidor se bloquea y no puede atender otras peticiones web mientras espera a la IA.
+Solución: Importar y usar `AsyncGroq` y anteponer la palabra clave `await` en la llamada a la API (`await client.chat.completions.create(...)`).
+
+4. Uso estricto de migraciones (Alembic):
+El archivo `main.py` tiene un bloque en el evento de inicio (lifespan) que hace un `ALTER TABLE pagos ADD COLUMN...` directamente utilizando SQL. 
+Dado que ya está instalada y configurada la librería `alembic` en el proyecto, esto es un anti-patrón. Cualquier cambio futuro a la base de datos (agregar columnas, cambiar tipos de dato, crear tablas nuevas) debe generarse corriendo:
+`alembic revision --autogenerate -m "Descripción"`
+seguido de `alembic upgrade head`.
+
+5. Structured Outputs en Groq (IA más estricta):
+En `limpiar_datos_ia` (dentro de `ocr_engine.py`), se le pide a la IA en el "prompt" que devuelva un "JSON puro" y luego se usa `json.loads` asumiendo que será perfecto. Si la IA decide responder "Aquí tienes el JSON: { ... }", el `json.loads` fallará rotundamente y el pago no se registrará.
+Solución: Usar la característica de "Structured Outputs" nativa (response_format="json_object" está bien, pero puede fallar) o utilizar librerías como `Instructor` o `Langchain` que obliguen al modelo de LLaMA a ajustarse estrictamente a un esquema de Pydantic.

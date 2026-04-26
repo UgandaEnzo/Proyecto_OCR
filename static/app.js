@@ -54,6 +54,7 @@ createApp({
                 telefono: '',
             },
             editandoPagoId: null,
+            editandoSoloBancoCliente: false,
             activeEstadoMenu: null,
             imagenSeleccionada: '',
             tasaActualCalc: 0,
@@ -351,6 +352,7 @@ createApp({
         },
         editarPago(pago) {
             this.editandoPagoId = pago.id;
+            this.editandoSoloBancoCliente = Boolean(pago.ruta_imagen && pago.es_chatbot);
             this.manualItem = {
                 banco: pago.banco || '',
                 referencia: pago.referencia || '',
@@ -362,6 +364,7 @@ createApp({
         closeManualModal() {
             this.showManualModal = false;
             this.editandoPagoId = null;
+            this.editandoSoloBancoCliente = false;
         },
         async subirPago() {
             const formEl = document.getElementById('uploadForm');
@@ -421,14 +424,20 @@ createApp({
             const method = this.editandoPagoId ? 'PATCH' : 'POST';
 
             try {
+                const payload = { ...this.manualItem };
+                if (this.editandoSoloBancoCliente) {
+                    // Mantener referencia y monto sin cambios; sólo se editan banco y cliente.
+                    payload.referencia = this.manualItem.referencia;
+                    payload.monto = this.manualItem.monto;
+                }
                 const resp = await fetch(url, {
                     method,
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(this.manualItem),
+                    body: JSON.stringify(payload),
                 });
                 const data = await resp.json();
                 if (resp.ok) {
-                    this.showToast(this.editandoPagoId ? 'Pago manual actualizado' : 'Pago manual guardado', 'success');
+                    this.showToast(this.editandoPagoId ? 'Pago actualizado' : 'Pago manual guardado', 'success');
                     this.closeManualModal();
                     this.cargar(this.page);
                 } else {

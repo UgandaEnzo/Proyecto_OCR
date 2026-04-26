@@ -68,13 +68,14 @@ Este proyecto es una solución de backend y panel administrativo construida con 
 Este proyecto se ha probado con las siguientes versiones aproximadas de dependencias:
 
 - `fastapi` 0.118.x
-- `uvicorn[standard]` 0.26.x
+- `uvicorn[standard]` 0.30.x
 - `pydantic` 2.8.x
 - `sqlalchemy` 2.0.x
 - `openpyxl` 3.1.x
 - `reportlab` 4.x
 - `groq` 1.0.x
 - `httpx` 0.24.x
+- `python-dotenv` 1.x
 
 ## Archivo `.env`
 
@@ -111,14 +112,16 @@ El proyecto incluye un flujo de build completo con `setup_project.py` y `OcrApp.
     ```powershell
     pip install -r requirements-dev.txt
     ```
-2.  Ejecuta el build:
+2.  Ejecuta el build desde la raíz del proyecto:
     ```powershell
     python setup_project.py
     ```
 
-El script crea `.venv_build`, instala las dependencias desde `requirements.txt` y `requirements-dev.txt`, y ejecuta PyInstaller para generar `dist\OcrApp.exe`.
+El script crea un entorno virtual de empaquetado en `.venv_build`, instala las dependencias desde `requirements.txt` y `requirements-dev.txt`, y ejecuta PyInstaller con `OcrApp.spec`.
 
-> El ejecutable **no incluye** el archivo `.env`. `run.py` carga el `.env` desde el directorio del ejecutable o desde los padres inmediatos, por lo que debes colocarlo junto al `.exe` o en un directorio superior.
+El artefacto resultante se genera en `dist\OcrApp.exe` o en la carpeta `dist` asociada a la salida de PyInstaller.
+
+> Nota: el ejecutable **no incluye** el archivo `.env`. `run.py` busca `.env` en el directorio del ejecutable y en los padres inmediatos, así que coloca `.env` junto al `.exe` o en un directorio superior.
 
 ## Endpoints principales
 

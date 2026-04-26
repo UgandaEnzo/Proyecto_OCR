@@ -160,3 +160,20 @@
 2026-04-21 18:03:44,628 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
 2026-04-21 18:04:44,363 WARNING ocr_api - Groq Vision fallo: Error code: 400 - {'error': {'message': 'messages[0].content must be a string', 'type': 'invalid_request_error', 'param': 'messages[0].content'}}
 2026-04-21 18:08:02,775 WARNING ocr_api - Groq Vision fallo: Error code: 400 - {'error': {'message': 'messages[0].content must be a string', 'type': 'invalid_request_error', 'param': 'messages[0].content'}}
+2026-04-26 08:45:42,873 ERROR ocr_api - ❌ Error crítico al inicializar la base de datos: (psycopg2.OperationalError) could not translate host name "aws-1-us-east-2.pooler.supabase.com" to address: Name or service not known
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-04-26 08:48:28,913 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-04-26 08:48:28,913 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-04-26 10:12:52,264 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-04-26 10:12:52,264 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-04-26 11:30:41,748 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-04-26 11:30:41,748 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-04-26 11:31:00,725 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-04-26 11:31:00,725 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-04-26 11:36:15,448 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-04-26 11:36:15,448 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-04-26 11:40:01,767 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-04-26 11:40:01,768 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-04-26 11:40:21,353 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-04-26 11:40:21,353 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)

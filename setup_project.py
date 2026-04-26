@@ -64,7 +64,7 @@ def setup_and_build():
     print("Ejecutando PyInstaller...")
     if os.path.exists(spec_path):
         print(f"Usando spec: {spec_path}")
-        if not run_command([python_venv, '-m', 'PyInstaller', '--clean', spec_path], "Compilando desde OcrApp.spec", cwd=project_dir):
+        if not run_command([python_venv, '-m', 'PyInstaller', '--clean', '--noconfirm', '--log-level=INFO', spec_path], "Compilando desde OcrApp.spec", cwd=project_dir):
             return
     else:
         sep = ";" if os.name == 'nt' else ":"
@@ -76,6 +76,8 @@ def setup_and_build():
             'OcrApp',
             '--onefile',
             '--clean',
+            '--noconfirm',
+            '--log-level=INFO',
             '--hidden-import',
             'rapidocr_onnxruntime',
             '--hidden-import',

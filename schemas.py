@@ -58,6 +58,7 @@ class PagoResponse(BaseModel):
     cliente_id: Optional[int] = None
     cliente: Optional[Cliente] = None
     ruta_imagen: Optional[str] = None
+    es_chatbot: bool = False
     class Config:
         from_attributes = True
 
