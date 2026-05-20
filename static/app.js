@@ -32,6 +32,7 @@ createApp({
             showNuevoClienteModal: false,
             showEditarClienteModal: false,
             editandoCliente: null,
+            savingCliente: false,
             uploadBank: '',
             uploadError: '',
             uploadFileSelected: false,
@@ -55,6 +56,7 @@ createApp({
             },
             editandoPagoId: null,
             editandoSoloBancoCliente: false,
+            savingManual: false,
             activeEstadoMenu: null,
             imagenSeleccionada: '',
             tasaActualCalc: 0,
@@ -365,6 +367,7 @@ createApp({
             this.showManualModal = false;
             this.editandoPagoId = null;
             this.editandoSoloBancoCliente = false;
+            this.savingManual = false;
         },
         async subirPago() {
             const formEl = document.getElementById('uploadForm');
@@ -420,6 +423,11 @@ createApp({
                 return;
             }
 
+            if (this.savingManual) {
+                return;
+            }
+            this.savingManual = true;
+
             const url = this.editandoPagoId ? `/pagos/${this.editandoPagoId}` : '/pago-manual/';
             const method = this.editandoPagoId ? 'PATCH' : 'POST';
 
@@ -445,6 +453,8 @@ createApp({
                 }
             } catch (err) {
                 this.showToast('Error al guardar pago manual', 'danger');
+            } finally {
+                this.savingManual = false;
             }
         },
         async openNuevoClienteModal() {
@@ -463,6 +473,9 @@ createApp({
                 this.showToast('La cédula es obligatoria', 'warning');
                 return;
             }
+            if (this.savingCliente) {
+                return;
+            }
             const cedula = this.nuevoCliente.cedula.trim();
             if (!/^[0-9]+$/.test(cedula)) {
                 this.showToast('La cédula debe contener solo números.', 'warning');
@@ -473,6 +486,7 @@ createApp({
                 this.showToast('El teléfono debe contener solo números.', 'warning');
                 return;
             }
+            this.savingCliente = true;
             try {
                 const resp = await fetch('/clientes/', {
                     method: 'POST',
@@ -493,6 +507,8 @@ createApp({
                 }
             } catch (err) {
                 this.showToast('Error al agregar cliente', 'danger');
+            } finally {
+                this.savingCliente = false;
             }
         },
         prepararEdicion(cliente) {
@@ -509,6 +525,9 @@ createApp({
                 this.showToast('La cédula es obligatoria', 'warning');
                 return;
             }
+            if (this.savingCliente) {
+                return;
+            }
             const cedula = this.editandoCliente.cedula.trim();
             if (!/^[0-9]+$/.test(cedula)) {
                 this.showToast('La cédula debe contener solo números.', 'warning');
@@ -519,6 +538,7 @@ createApp({
                 this.showToast('El teléfono debe contener solo números.', 'warning');
                 return;
             }
+            this.savingCliente = true;
             try {
                 const resp = await fetch(`/clientes/${this.editandoCliente.id}`, {
                     method: 'PUT',
@@ -539,6 +559,8 @@ createApp({
                 }
             } catch (err) {
                 this.showToast('Error al actualizar cliente', 'danger');
+            } finally {
+                this.savingCliente = false;
             }
         },
         async eliminarCliente(id) {

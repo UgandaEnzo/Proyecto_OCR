@@ -15,8 +15,8 @@
       "type": "n8n-nodes-base.telegramTrigger",
       "typeVersion": 1,
       "position": [
-        672,
-        -48
+        0,
+        0
       ],
       "webhookId": "d664bead-8b2e-48cf-8fa7-80c7660ed38d",
       "credentials": {
@@ -57,8 +57,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        896,
-        -48
+        250,
+        0
       ]
     },
     {
@@ -97,8 +97,8 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.1,
       "position": [
-        1120,
-        -48
+        500,
+        0
       ],
       "webhookId": "4f101013-2bed-4ea3-b655-e2424b77a570",
       "credentials": {
@@ -120,8 +120,8 @@
       "type": "n8n-nodes-base.telegramTrigger",
       "typeVersion": 1,
       "position": [
-        688,
-        224
+        750,
+        0
       ],
       "webhookId": "871a701e-b3bd-48d8-817d-faa672ca2bea",
       "credentials": {
@@ -148,8 +148,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        896,
-        224
+        1000,
+        0
       ]
     },
     {
@@ -163,8 +163,8 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.1,
       "position": [
-        1120,
-        208
+        1250,
+        0
       ],
       "webhookId": "6a12351a-15f4-420c-a265-9a4151edae6c",
       "credentials": {
@@ -217,8 +217,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        1344,
-        208
+        1500,
+        0
       ]
     },
     {
@@ -232,8 +232,8 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.1,
       "position": [
-        1552,
-        208
+        1750,
+        0
       ],
       "webhookId": "bc2fb288-88a0-41b0-87e9-c3ada2d0448f",
       "credentials": {

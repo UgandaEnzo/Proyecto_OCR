@@ -470,7 +470,10 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" @click="closeManualModal">Cancelar</button>
-                <button type="button" class="btn btn-primary" @click="guardarManual" :disabled="!manualItem.banco || !manualItem.referencia || !/^[0-9]+$/.test(manualItem.referencia) || !manualItem.monto || manualItem.monto <= 0">Guardar</button>
+                <button type="button" class="btn btn-primary" @click="guardarManual" :disabled="savingManual || !manualItem.banco || !manualItem.referencia || !/^[0-9]+$/.test(manualItem.referencia) || !manualItem.monto || manualItem.monto <= 0">
+                    <span v-if="savingManual" class="spinner"></span>
+                    {{ savingManual ? ' Guardando...' : 'Guardar' }}
+                </button>
             </div>
         </div>
     </div>
@@ -497,7 +500,10 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" @click="closeNuevoClienteModal">Cancelar</button>
-                <button type="button" class="btn btn-primary" @click="agregarCliente" :disabled="!nuevoCliente.nombre || !nuevoCliente.cedula">Guardar Cliente</button>
+                <button type="button" class="btn btn-primary" @click="agregarCliente" :disabled="savingCliente || !nuevoCliente.nombre || !nuevoCliente.cedula">
+                    <span v-if="savingCliente" class="spinner"></span>
+                    {{ savingCliente ? ' Guardando...' : 'Guardar Cliente' }}
+                </button>
             </div>
         </div>
     </div>
@@ -524,7 +530,10 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" @click="closeEditarClienteModal">Cancelar</button>
-                <button type="button" class="btn btn-primary" @click="guardarEdicion" :disabled="!editandoCliente.cedula">Actualizar</button>
+                <button type="button" class="btn btn-primary" @click="guardarEdicion" :disabled="savingCliente || !editandoCliente.cedula">
+                    <span v-if="savingCliente" class="spinner"></span>
+                    {{ savingCliente ? ' Actualizando...' : 'Actualizar' }}
+                </button>
             </div>
         </div>
     </div>
