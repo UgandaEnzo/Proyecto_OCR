@@ -69,13 +69,14 @@ def _get_sqlite_db_path() -> Optional[Path]:
         sqlite_path = SQLALCHEMY_DATABASE_URL.replace('sqlite://', '', 1)
         return Path(sqlite_path).resolve()
     return None
-def _verificar_estado_groq(api_key: str) -> tuple[bool, str]:
+
+async def _verificar_estado_groq(api_key: str) -> tuple[bool, str]:
     if not api_key:
         return (False, 'No se ha configurado la clave Groq.')
     try:
-        from groq import Groq
-        client = Groq(api_key=api_key, timeout=3.0)
-        client.chat.completions.create(messages=[{'role': 'user', 'content': 'Responde con pong'}], model=os.getenv('GROQ_MODEL', 'llama-3.3-70b-versatile'), temperature=0.0, max_tokens=1, timeout=3.0)
+        from groq import AsyncGroq
+        client = AsyncGroq(api_key=api_key, timeout=3.0)
+        await client.chat.completions.create(messages=[{'role': 'user', 'content': 'Responde con pong'}], model=os.getenv('GROQ_MODEL', 'llama-3.3-70b-versatile'), temperature=0.0, max_tokens=1, timeout=3.0)
         return (True, 'Clave Groq cargada y verificada.')
     except Exception as e:
         logger.warning('No se pudo verificar Groq API: %s', e)
@@ -392,17 +393,17 @@ def _comprimir_imagen_para_groq(image_bytes: bytes, max_side: int=720, quality: 
         logger.debug('No se pudo comprimir la imagen para Groq, se usa el original: %s', e)
         return image_bytes
 
-def _detectar_banco_con_groq(image_bytes: bytes) -> dict:
+async def _detectar_banco_con_groq(image_bytes: bytes) -> dict:
     api_key = os.getenv('GROQ_API_KEY', '').strip()
     if not api_key:
         return {}
     try:
-        from groq import Groq
-        client = Groq(api_key=api_key)
+        from groq import AsyncGroq
+        client = AsyncGroq(api_key=api_key)
         image_bytes_for_groq = _comprimir_imagen_para_groq(image_bytes)
         image_b64 = base64.b64encode(image_bytes_for_groq).decode('utf-8')
         prompt_text = 'Eres un experto en reconocer bancos venezolanos a partir de comprobantes de pago. Devuelve un JSON válido con los campos banco_predicho y sudeban_code. Si no puedes identificar el banco, usa Desconocido. Responde únicamente con JSON válido, sin texto adicional.'
-        response = client.chat.completions.create(messages=[{'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': image_b64}}, {'type': 'text', 'text': prompt_text}]}], model=os.getenv('GROQ_MODEL', 'llama-3.2-11b-vision-preview'), temperature=0.0, max_tokens=150)
+        response = await client.chat.completions.create(messages=[{'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': image_b64}}, {'type': 'text', 'text': prompt_text}]}], model=os.getenv('GROQ_MODEL', 'llama-3.2-11b-vision-preview'), temperature=0.0, max_tokens=150)
         content = ''
         if getattr(response, 'choices', None):
             choice = response.choices[0]

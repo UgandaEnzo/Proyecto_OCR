@@ -2,12 +2,21 @@ import os
 import re
 import json
 import cv2
-from groq import Groq
+from groq import AsyncGroq
 import numpy as np
 from PIL import Image
+from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from ocr_utils import engine
 import bank_rules
+
+
+class OcrData(BaseModel):
+    monto: float = 0.0
+    referencia: str = "No detectada"
+    cedula: str | None = None
+    banco: str | None = None
+    sudeban_code: str | None = None
 
 load_dotenv()
 
@@ -15,7 +24,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 GROQ_VISION_MODEL = "llama-3.2-11b-vision-preview"
 
-client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+client = AsyncGroq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 def extraer_texto(ruta_imagen):
     """Usa RapidOCR para extraer texto plano de la imagen."""
@@ -34,11 +43,27 @@ def extraer_texto(ruta_imagen):
         print(f"❌ [OCR] Error procesando imagen con RapidOCR: {e}")
     return ""
 
-def limpiar_datos_ia(texto_ocr):
-    """Utiliza Groq para estructurar el texto sucio del OCR en un JSON limpio."""
+def _extraer_json_de_texto(texto: str) -> dict | None:
+    if not texto:
+        return None
+    texto = texto.strip()
+    encontrado = re.search(r'\{.*\}', texto, re.DOTALL)
+    if encontrado:
+        try:
+            return json.loads(encontrado.group(0))
+        except json.JSONDecodeError:
+            pass
+    try:
+        return json.loads(texto)
+    except json.JSONDecodeError:
+        return None
+
+
+async def limpiar_datos_ia(texto_ocr):
+    """Utiliza Groq (Async) para estructurar el texto sucio del OCR en un JSON limpio."""
     if not client or not texto_ocr:
         return None
-    
+
     prompt = """
     Actúa como un extractor de datos financieros experto en comprobantes de pago venezolanos.
     Tu objetivo es limpiar y estructurar el texto sucio de un OCR.
@@ -54,7 +79,7 @@ def limpiar_datos_ia(texto_ocr):
     """
 
     try:
-        response = client.chat.completions.create(
+        response = await client.chat.completions.create(
             messages=[
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": texto_ocr}
@@ -64,7 +89,11 @@ def limpiar_datos_ia(texto_ocr):
             temperature=0.0,
         )
         contenido = response.choices[0].message.content
-        return json.loads(contenido)
+        datos = _extraer_json_de_texto(contenido)
+        if datos:
+            validated = OcrData(**datos)
+            return validated.model_dump()
+        return None
     except Exception as e:
         print(f"⚠️ [IA] Error en limpieza con Groq: {e}")
     return None
@@ -90,8 +119,8 @@ def extract_sudeban_code(texto):
     return None
 
 
-def procesar_pago_ocr(image_path, aggressive=False):
-    """Flujo Principal Optimizado: RapidOCR -> Groq (Extractor Principal)."""
+async def procesar_pago_ocr(image_path, aggressive=False):
+    """Flujo Principal Optimizado: RapidOCR -> Groq (Extractor Principal asíncrono)."""
     # 1. Carga de imagen con validación
     img_cv = cv2.imread(image_path)
     if img_cv is None:
@@ -105,8 +134,8 @@ def procesar_pago_ocr(image_path, aggressive=False):
     # 2. Ejecutar RapidOCR (Extracción de texto base)
     texto_completo = extraer_texto(image_path)
     
-    # 3. Procesar texto bruto con IA (Groq) - Ahora es el filtro principal
-    ai_data = limpiar_datos_ia(texto_completo)
+    # 3. Procesar texto bruto con IA (Groq asíncrono) - Ahora es el filtro principal
+    ai_data = await limpiar_datos_ia(texto_completo)
     pred_banco_ia = None
     pred_sudeban = None
     if ai_data and isinstance(ai_data, dict):
@@ -153,5 +182,5 @@ def procesar_pago_ocr(image_path, aggressive=False):
         "source": "UNKNOWN"
     }
 
-def procesar_imagen(image_path, aggressive=False):
-    return procesar_pago_ocr(image_path, aggressive)
+async def procesar_imagen(image_path, aggressive=False):
+    return await procesar_pago_ocr(image_path, aggressive)

@@ -186,7 +186,7 @@ async def subir_pago(file: Optional[UploadFile]=File(None), banco: str=Form(...)
         if existing_by_hash:
             return JSONResponse(content={'mensaje': 'Archivo duplicado detectado (hash). Ya existe un pago con este archivo.', 'id_existente': existing_by_hash.id, 'referencia': existing_by_hash.referencia}, status_code=409)
         try:
-            resultado = ocr_engine.procesar_imagen(filepath)
+            resultado = await ocr_engine.procesar_imagen(filepath)
         except RuntimeError as e:
             logger.error('Error crítico OCR: %s', e)
             raise HTTPException(status_code=500, detail=str(e))
@@ -441,14 +441,14 @@ async def actualizar_pago_manual(pago_id: int, datos: schemas.PagoManual, db: Se
     return pago
 
 @router.post('/reprocesar/{pago_id}')
-def reprocesar_pago(pago_id: int, db: Session=Depends(get_db)):
+async def reprocesar_pago(pago_id: int, db: Session=Depends(get_db)):
     pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
     if not pago:
         raise HTTPException(status_code=404, detail='Pago no encontrado')
     if not pago.ruta_imagen or not os.path.exists(pago.ruta_imagen):
         raise HTTPException(status_code=400, detail='Este pago no tiene imagen para reprocesar')
     try:
-        resultado = ocr_engine.procesar_imagen(pago.ruta_imagen)
+        resultado = await ocr_engine.procesar_imagen(pago.ruta_imagen)
         banco_dest_nuevo = resultado.get('banco_destino', pago.banco_destino)
         ref_nueva = resultado.get('referencia', pago.referencia)
         monto_nuevo = float(resultado.get('monto') or pago.monto)
@@ -495,8 +495,8 @@ def obtener_imagen_pago(pago_id: int, db: Session=Depends(get_db)):
     return {'imagen_url': f'/uploads/{filename}'}
 
 @router.post('/pagos/{pago_id}/reprocesar')
-def reprocesar_pago_alias(pago_id: int, db: Session=Depends(get_db)):
-    return reprocesar_pago(pago_id, db)
+async def reprocesar_pago_alias(pago_id: int, db: Session=Depends(get_db)):
+    return await reprocesar_pago(pago_id, db)
 
 @router.post('/pagos/{pago_id}/estado')
 def cambiar_estado_pago_alias(pago_id: int, update_data: schemas.EstadoUpdate, db: Session=Depends(get_db)):

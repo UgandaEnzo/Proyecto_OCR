@@ -1,20 +1,15 @@
 
 from routers import clientes, pagos, reportes, gestion, ia
-from config import get_config_value
+from utils import require_api_key, registrar_auditoria, _setup_logging
 
 import os
 import sys
-import logging
-from enum import Enum
 from pathlib import Path
-from typing import Optional
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse, FileResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from logging.handlers import RotatingFileHandler
-from sqlalchemy.orm import Session
 from sqlalchemy import exc as sa_exc, inspect, text
 base_dir = Path(sys.executable if getattr(sys, 'frozen', False) else __file__).resolve().parent
 dotenv_path = base_dir / '.env'
@@ -23,24 +18,9 @@ uploads_dir = base_dir / 'uploads'
 static_dir = base_dir / 'static'
 uploads_dir.mkdir(parents=True, exist_ok=True)
 static_dir.mkdir(parents=True, exist_ok=True)
-from database import engine, get_db, Base, SQLALCHEMY_DATABASE_URL
+from database import engine, get_db, Base
 import models
 
-def _setup_logging() -> logging.Logger:
-    """Configura un logger robusto que escribe en consola y en archivos rotativos."""
-    os.makedirs('logs', exist_ok=True)
-    logger = logging.getLogger('ocr_api')
-    if logger.handlers:
-        return logger
-    logger.setLevel(os.getenv('LOG_LEVEL', 'INFO').upper())
-    fmt = logging.Formatter('%(asctime)s %(levelname)s %(name)s - %(message)s')
-    file_handler = RotatingFileHandler(os.path.join('logs', 'app.log'), maxBytes=2 * 1024 * 1024, backupCount=5, encoding='utf-8')
-    file_handler.setFormatter(fmt)
-    logger.addHandler(file_handler)
-    console = logging.StreamHandler()
-    console.setFormatter(fmt)
-    logger.addHandler(console)
-    return logger
 logger = _setup_logging()
 
 @asynccontextmanager
@@ -52,9 +32,10 @@ async def lifespan(app: FastAPI):
         if 'pagos' in inspector.get_table_names():
             columnas_pagos = [col['name'] for col in inspector.get_columns('pagos')]
             if 'tasa_momento' not in columnas_pagos:
-                with engine.begin() as conn:
-                    conn.execute(text('ALTER TABLE pagos ADD COLUMN tasa_momento FLOAT'))
-                logger.info("Se agregó la columna 'tasa_momento' en la tabla pagos.")
+                logger.warning(
+                    "La columna 'tasa_momento' no existe en la tabla 'pagos'. "
+                    "Ejecuta: alembic upgrade head"
+                )
         logger.info('Sistema de Base de Datos inicializado: Tablas verificadas.')
         logger.info('🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)')
     except Exception as e:
@@ -87,46 +68,7 @@ def healthz():
     """Verifica que el servidor está en línea."""
     return {'status': 'ok'}
 
-def require_api_key(x_api_key: Optional[str]=Header(None), db: Session = Depends(get_db)):
-    configured_key = get_config_value(db, 'API_KEY')
-    if configured_key and (not x_api_key or x_api_key != configured_key):
-        raise HTTPException(status_code=401, detail='API key inválida o no proporcionada')
-    return True
 
-class EstadoPago(str, Enum):
-    no_verificado = 'no_verificado'
-    verificado = 'verificado'
-    falso = 'falso'
-
-def registrar_auditoria(db: Session, pago_id: int, accion: str, detalles: str):
-    """Función para ahorrar trabajo: registra movimientos en el historial"""
-    nuevo_historial = models.PagoHistory(pago_id=pago_id, accion=accion, detalles=detalles, usuario='sistema_ia')
-    db.add(nuevo_historial)
-    db.commit()
-
-def _get_env_path() -> Path:
-    return base_dir / '.env'
-
-
-
-def _get_database_type() -> str:
-    url = SQLALCHEMY_DATABASE_URL.lower()
-    if url.startswith('sqlite://'):
-        return 'sqlite'
-    if url.startswith('postgresql://') or url.startswith('postgres://'):
-        return 'postgresql'
-    return 'unsupported'
-
-def _get_sqlite_db_path() -> Optional[Path]:
-    if _get_database_type() != 'sqlite':
-        return None
-    if SQLALCHEMY_DATABASE_URL.startswith('sqlite:///'):
-        sqlite_path = SQLALCHEMY_DATABASE_URL.replace('sqlite:///', '', 1)
-        return Path(sqlite_path).resolve()
-    if SQLALCHEMY_DATABASE_URL.startswith('sqlite://'):
-        sqlite_path = SQLALCHEMY_DATABASE_URL.replace('sqlite://', '', 1)
-        return Path(sqlite_path).resolve()
-    return None
 
 @app.get('/', include_in_schema=False)
 async def root_redirect():

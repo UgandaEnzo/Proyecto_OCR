@@ -183,3 +183,29 @@
 2026-05-13 10:34:44,045 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
 2026-05-13 11:04:35,683 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
 2026-05-13 11:04:35,684 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-05-22 14:48:22,266 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-05-22 14:48:22,269 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-05-22 14:51:16,689 WARNING ocr_api - Groq Vision fallo: Error code: 400 - {'error': {'message': 'messages[0].content must be a string', 'type': 'invalid_request_error', 'param': 'messages[0].content'}}
+2026-05-22 14:54:28,775 WARNING ocr_api - Groq Vision fallo: Error code: 400 - {'error': {'message': 'messages[0].content must be a string', 'type': 'invalid_request_error', 'param': 'messages[0].content'}}
+2026-05-22 16:45:07,978 ERROR ocr_api - ❌ Error crítico al inicializar la base de datos: (psycopg2.OperationalError) could not translate host name "aws-1-us-east-2.pooler.supabase.com" to address: Name or service not known
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-05-22 16:46:25,799 ERROR ocr_api - ❌ Error crítico al inicializar la base de datos: (psycopg2.OperationalError) connection to server at "aws-1-us-east-2.pooler.supabase.com" (3.148.140.216), port 6543 failed: Permission denied (0x0000271D/10013)
+	Is the server running on that host and accepting TCP/IP connections?
+connection to server at "aws-1-us-east-2.pooler.supabase.com" (13.58.13.125), port 6543 failed: Permission denied (0x0000271D/10013)
+	Is the server running on that host and accepting TCP/IP connections?
+connection to server at "aws-1-us-east-2.pooler.supabase.com" (3.131.201.192), port 6543 failed: Permission denied (0x0000271D/10013)
+	Is the server running on that host and accepting TCP/IP connections?
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-05-22 16:48:17,383 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-05-22 16:48:17,384 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-05-22 16:58:13,183 WARNING ocr_api - Groq Vision fallo: Error code: 400 - {'error': {'message': 'messages[0].content must be a string', 'type': 'invalid_request_error', 'param': 'messages[0].content'}}
+2026-05-22 16:58:35,745 WARNING ocr_api - Groq Vision fallo: Error code: 400 - {'error': {'message': 'messages[0].content must be a string', 'type': 'invalid_request_error', 'param': 'messages[0].content'}}
+2026-05-22 16:59:04,898 WARNING ocr_api - Groq Vision fallo: Error code: 400 - {'error': {'message': 'messages[0].content must be a string', 'type': 'invalid_request_error', 'param': 'messages[0].content'}}
+2026-05-22 16:59:32,009 WARNING ocr_api - Groq Vision fallo: Error code: 400 - {'error': {'message': 'messages[0].content must be a string', 'type': 'invalid_request_error', 'param': 'messages[0].content'}}
+2026-05-22 17:02:57,810 WARNING ocr_api - Groq Vision fallo: Error code: 400 - {'error': {'message': 'messages[0].content must be a string', 'type': 'invalid_request_error', 'param': 'messages[0].content'}}
+2026-05-23 07:18:33,349 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-05-23 07:18:33,349 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-05-23 07:19:31,964 WARNING ocr_api - Groq Vision fallo: Error code: 400 - {'error': {'message': 'messages[0].content must be a string', 'type': 'invalid_request_error', 'param': 'messages[0].content'}}
+2026-05-23 07:19:50,756 WARNING ocr_api - Groq Vision fallo: Error code: 400 - {'error': {'message': 'messages[0].content must be a string', 'type': 'invalid_request_error', 'param': 'messages[0].content'}}

@@ -42,28 +42,28 @@ async def consultar_datos_ia(query: schemas.ChatQuery, db: Session=Depends(get_d
     balance_total_bs = db.query(func.sum(models.Pago.monto)).scalar() or 0.0
     prompt = f'\n    Eres un asistente contable experto del Sistema de Conciliación.\n    TABLAS Y ESQUEMA DISPONIBLES EN LA BASE DE DATOS:\n    - clientes(id, nombre, cedula, telefono)\n    - pagos(id, referencia, banco, banco_destino, monto, monto_usd, tasa_momento, tasa_cambio, fecha_registro, ruta_imagen, file_hash, estado, cliente_id)\n    - pagos_history(id, pago_id, accion, detalles, usuario, fecha)\n    - tasas_cambio(id, proveedor, monto_tasa, fecha_actualizacion)\n    RELACIONES:\n    - pago.cliente_id -> cliente.id\n    - un pago puede no tener cliente asociado\n\n    CONTEXTO AGREGADO:\n    - Clientes totales: {total_clientes}\n    - Pagos totales: {total_pagos}\n    - Registros de auditoría: {total_historial}\n    - Pagos por estado:\n{contexto_por_estado}\n    - Total recaudado este mes: {recaudado_mes:,.2f} Bs.\n    - Total recaudado último 30 días: {recaudado_30_dias:,.2f} Bs.\n    - Total recaudado últimos 60 días: {recaudado_60_dias:,.2f} Bs.\n    - Total recaudado en USD (sumatoria de monto_usd): {total_usd_recaudado:,.2f} USD.\n    - Tasa promedio de los últimos pagos: {tasa_promedio_pagos:.4f}.\n    - Balance total en Bs: {balance_total_bs:,.2f} Bs.\n    - Última tasa BCV registrada: {tasa_bcv_texto}\n    - Mejor cliente (frecuencia): {nombre_mejor}\n\n    ÚLTIMOS 5 PAGOS REGISTRADOS:\n    {contexto_pagos}\n\n    ÚLTIMAS 5 ACCIONES DE HISTORIAL:\n    {contexto_historial}\n\n    INSTRUCCIONES:\n    - Usa SOLO los datos proporcionados en este prompt.\n    - No inventes valores, no supongas pagos, clientes ni datos adicionales.\n    - Si no tienes información suficiente para responder, di "No hay suficiente información en los datos".\n    - Responde de forma breve y profesional.\n\n    PREGUNTA DEL USUARIO:\n    {query.pregunta}\n    '
     try:
-        from groq import Groq
-        client = Groq(api_key=os.getenv('GROQ_API_KEY'))
-        response = client.chat.completions.create(messages=[{'role': 'user', 'content': prompt}], model=os.getenv('GROQ_MODEL', 'llama-3.3-70b-versatile'), temperature=0.2)
+        from groq import AsyncGroq
+        client = AsyncGroq(api_key=os.getenv('GROQ_API_KEY'))
+        response = await client.chat.completions.create(messages=[{'role': 'user', 'content': prompt}], model=os.getenv('GROQ_MODEL', 'llama-3.3-70b-versatile'), temperature=0.2)
         return {'respuesta': response.choices[0].message.content}
     except Exception:
         return {'respuesta': 'No fue posible procesar la consulta IA en este momento. Comprueba la configuración de GROQ_API_KEY y vuelve a intentarlo.'}
 
 @router.get('/gestion/ia/status')
-def estado_groq_api(db: Session=Depends(get_db)):
+async def estado_groq_api(db: Session=Depends(get_db)):
     api_key = get_config_value(db, 'GROQ_API_KEY', '')
-    online, message = _verificar_estado_groq(api_key)
+    online, message = await _verificar_estado_groq(api_key)
     state = 'online' if online else 'invalid_key' if not api_key else 'offline'
     return {'state': state, 'api_key': api_key, 'message': message}
 
 @router.post('/gestion/ia/key')
-def guardar_groq_api_key(data: schemas.GestionApiKey, db: Session=Depends(get_db)):
+async def guardar_groq_api_key(data: schemas.GestionApiKey, db: Session=Depends(get_db)):
     api_key = data.api_key.strip()
     if not api_key:
         raise HTTPException(status_code=400, detail='La clave de Groq no puede estar vacía.')
     set_config_value(db, 'GROQ_API_KEY', api_key)
     os.environ['GROQ_API_KEY'] = api_key
-    online, message = _verificar_estado_groq(api_key)
+    online, message = await _verificar_estado_groq(api_key)
     state = 'online' if online else 'offline'
     return {'mensaje': 'Clave Groq guardada correctamente.', 'state': state, 'message': message}
 
@@ -78,7 +78,7 @@ async def detectar_banco(file: UploadFile=File(...), auth: bool=Depends(require_
         with open(temp_path, 'wb') as buffer:
             while (chunk := (await file.read(1024 * 1024))):
                 buffer.write(chunk)
-        resultado = ocr_engine.procesar_imagen(temp_path)
+        resultado = await ocr_engine.procesar_imagen(temp_path)
         if not resultado:
             raise HTTPException(status_code=500, detail='No se pudo procesar la imagen para detección de banco.')
         return {'banco_predicho': resultado.get('banco_predicho'), 'banco_ia': resultado.get('banco_ia'), 'sudeban_code': resultado.get('sudeban_code'), 'referencia': resultado.get('referencia'), 'monto': resultado.get('monto'), 'cedula': resultado.get('cedula'), 'texto_completo': resultado.get('texto_completo')}
@@ -103,8 +103,8 @@ async def detectar_banco_vision(data: schemas.VisionBankDetectionRequest, auth: 
     try:
         with open(temp_path, 'wb') as buffer:
             buffer.write(image_data)
-        resultado = ocr_engine.procesar_imagen(temp_path) or {}
-        groq_info = _detectar_banco_con_groq(image_data)
+        resultado = await ocr_engine.procesar_imagen(temp_path) or {}
+        groq_info = await _detectar_banco_con_groq(image_data)
         banco_predicho = groq_info.get('banco_predicho') or resultado.get('banco_predicho') or resultado.get('banco_ia')
         sudeban_code = groq_info.get('sudeban_code') or resultado.get('sudeban_code')
         return {'banco_predicho': banco_predicho, 'banco_ia': resultado.get('banco_ia'), 'sudeban_code': sudeban_code, 'referencia': resultado.get('referencia'), 'monto': resultado.get('monto'), 'cedula': resultado.get('cedula'), 'texto_completo': resultado.get('texto_completo')}
