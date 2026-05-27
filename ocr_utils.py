@@ -1,16 +1,21 @@
+import os
 import unicodedata
 from dotenv import load_dotenv
-from rapidocr_onnxruntime import RapidOCR
 
 load_dotenv()
 
-# Inicialización única del motor RapidOCR
-try:
-    engine = RapidOCR()
-    print("🚀 [SISTEMA] Motor OCR Único: RapidOCR inicializado correctamente.")
-except Exception as e:
-    print(f"❌ [SISTEMA] Error crítico al cargar RapidOCR: {e}")
-    engine = None
+# Inicialización única del motor RapidOCR (con carga perezosa)
+engine = None
+if os.getenv("MOTOR_OCR_ACTIVO", "rapidocr").lower() == "rapidocr":
+    try:
+        from rapidocr_onnxruntime import RapidOCR
+        engine = RapidOCR()
+        print("🚀 [SISTEMA] Motor OCR Único: RapidOCR inicializado correctamente.")
+    except Exception as e:
+        print(f"❌ [SISTEMA] Error al cargar RapidOCR: {e}. El OCR usará solo IA.")
+        engine = None
+else:
+    print("ℹ️ [SISTEMA] OCR local desactivado. Se usará solo Groq IA para extracción.")
 
 def normalizar_texto(texto):
     if not texto:

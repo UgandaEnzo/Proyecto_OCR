@@ -1,5 +1,5 @@
-{
-  "name": "Automatización de Pagos (Telegram + FastAPI)",
+﻿{
+  "name": "AutomatizaciÃ³n de Pagos (Telegram + FastAPI)",
   "nodes": [
     {
       "parameters": {
@@ -29,7 +29,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://92b0-162-43-188-30.ngrok-free.app/detectar-banco/",
+        "url": "https://proyecto-ocr-8n3s.onrender.com/detectar-banco/",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -64,7 +64,7 @@
     {
       "parameters": {
         "chatId": "={{ $('Recibir Imagen (Telegram)1').item.json.message.chat.id }}",
-        "text": "=🏦 Banco: {{ $json.banco_predicho || 'No detectado' }}\n📄 Ref: {{ $json.referencia }}\n💵 Monto: {{ $json.monto }} Bs.\n\n¿Deseas registrar este pago?",
+        "text": "=ðŸ¦ Banco: {{ $json.banco_predicho || 'No detectado' }}\nðŸ“„ Ref: {{ $json.referencia }}\nðŸ’µ Monto: {{ $json.monto }} Bs.\n\nÂ¿Deseas registrar este pago?",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -72,13 +72,13 @@
               "row": {
                 "buttons": [
                   {
-                    "text": "✅ Confirmar",
+                    "text": "âœ… Confirmar",
                     "additionalFields": {
                       "callback_data": "confirmar"
                     }
                   },
                   {
-                    "text": "❌ Cancelar",
+                    "text": "âŒ Cancelar",
                     "additionalFields": {
                       "callback_data": "cancelar"
                     }
@@ -93,7 +93,7 @@
         }
       },
       "id": "37104a4f-5a7e-4ef1-830d-5af475f4778f",
-      "name": "Pedir Confirmación1",
+      "name": "Pedir ConfirmaciÃ³n1",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.1,
       "position": [
@@ -116,7 +116,7 @@
         "additionalFields": {}
       },
       "id": "15055dcf-c8fa-4ad9-ab37-67eaf8bb43a0",
-      "name": "Botón Presionado1",
+      "name": "BotÃ³n Presionado1",
       "type": "n8n-nodes-base.telegramTrigger",
       "typeVersion": 1,
       "position": [
@@ -144,7 +144,7 @@
         }
       },
       "id": "713f2785-7bc6-4b9e-8622-350ce3aaa6a2",
-      "name": "Es Confirmación?1",
+      "name": "Es ConfirmaciÃ³n?1",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
@@ -177,7 +177,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://92b0-162-43-188-30.ngrok-free.app/registrar-pago-confirmado/",
+        "url": "https://proyecto-ocr-8n3s.onrender.com/registrar-pago-confirmado/",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -193,15 +193,15 @@
           "parameters": [
             {
               "name": "referencia",
-              "value": "={{ $('Botón Presionado1').item.json.callback_query.message.text.match(/Ref:\\s*([0-9]+)/)[1] }}"
+              "value": "={{ $('BotÃ³n Presionado1').item.json.callback_query.message.text.match(/Ref:\\s*([0-9]+)/)[1] }}"
             },
             {
               "name": "monto",
-              "value": "={{ $('Botón Presionado1').item.json.callback_query.message.text.match(/Monto:\\s*([0-9.,]+)/)[1].replace(',', '.') }}"
+              "value": "={{ $('BotÃ³n Presionado1').item.json.callback_query.message.text.match(/Monto:\\s*([0-9.,]+)/)[1].replace(',', '.') }}"
             },
             {
               "name": "banco",
-              "value": "={{ $('Botón Presionado1').item.json.callback_query.message.text.match(/Banco:\\s*([^\\n]+)/)[1].trim() }}"
+              "value": "={{ $('BotÃ³n Presionado1').item.json.callback_query.message.text.match(/Banco:\\s*([^\\n]+)/)[1].trim() }}"
             },
             {
               "parameterType": "formBinaryData",
@@ -223,12 +223,12 @@
     },
     {
       "parameters": {
-        "chatId": "={{ $('Botón Presionado1').item.json.callback_query.message.chat.id }}",
-        "text": "✅ ¡Pago registrado exitosamente en el sistema!",
+        "chatId": "={{ $('BotÃ³n Presionado1').item.json.callback_query.message.chat.id }}",
+        "text": "âœ… Â¡Pago registrado exitosamente en el sistema!",
         "additionalFields": {}
       },
       "id": "866eb44d-e589-4f2f-b873-24428cce6179",
-      "name": "Aviso Éxito1",
+      "name": "Aviso Ã‰xito1",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.1,
       "position": [
@@ -261,25 +261,25 @@
       "main": [
         [
           {
-            "node": "Pedir Confirmación1",
+            "node": "Pedir ConfirmaciÃ³n1",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Botón Presionado1": {
+    "BotÃ³n Presionado1": {
       "main": [
         [
           {
-            "node": "Es Confirmación?1",
+            "node": "Es ConfirmaciÃ³n?1",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Es Confirmación?1": {
+    "Es ConfirmaciÃ³n?1": {
       "main": [
         [
           {
@@ -305,14 +305,14 @@
       "main": [
         [
           {
-            "node": "Aviso Éxito1",
+            "node": "Aviso Ã‰xito1",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Pedir Confirmación1": {
+    "Pedir ConfirmaciÃ³n1": {
       "main": [
         []
       ]

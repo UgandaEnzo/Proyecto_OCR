@@ -1,0 +1,146 @@
+﻿{
+  "name": "Pago vÃ­a Telegram (AutomÃ¡tico - sin confirmaciÃ³n)",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": { "download": true }
+      },
+      "id": "trigger-telegram",
+      "name": "ðŸ“© Recibir Imagen",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "credentials": { "telegramApi": { "id": "TU_ID", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://proyecto-ocr-8n3s.onrender.com/detectar-banco/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "x-api-key", "value": "miclave123" }]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [{
+            "parameterType": "formBinaryData",
+            "name": "file",
+            "inputDataFieldName": "data"
+          }]
+        }
+      },
+      "id": "http-ocr",
+      "name": "ðŸ” OCR FastAPI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [250, 0]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $('ðŸ“© Recibir Imagen').item.json.message.photo.slice(-1)[0].file_id }}"
+      },
+      "id": "telegram-descargar",
+      "name": "ðŸ“Ž Descargar Imagen",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [500, 0],
+      "credentials": { "telegramApi": { "id": "TU_ID", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://proyecto-ocr-8n3s.onrender.com/registrar-pago-confirmado/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "x-api-key", "value": "miclave123" }]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "referencia",
+              "value": "={{ $('ðŸ” OCR FastAPI').item.json.referencia }}"
+            },
+            {
+              "name": "monto",
+              "value": "={{ $('ðŸ” OCR FastAPI').item.json.monto }}"
+            },
+            {
+              "name": "banco",
+              "value": "={{ $('ðŸ” OCR FastAPI').item.json.banco_predicho || $('ðŸ” OCR FastAPI').item.json.banco_ia }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        }
+      },
+      "id": "http-guardar",
+      "name": "ðŸ’¾ Guardar en BD",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [750, 0],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [{
+            "value1": "={{ $json.error != null }}",
+            "value2": true
+          }]
+        }
+      },
+      "id": "if-error",
+      "name": "âš ï¸ Â¿Hubo Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1000, 0]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('ðŸ“© Recibir Imagen').item.json.message.chat.id }}",
+        "text": "=âœ… Â¡Pago registrado exitosamente!\n\nðŸ¦ Banco: {{ $('ðŸ” OCR FastAPI').item.json.banco_predicho }}\nðŸ“ Ref: {{ $('ðŸ” OCR FastAPI').item.json.referencia }}\nðŸ’° Monto: {{ $('ðŸ” OCR FastAPI').item.json.monto }} Bs."
+      },
+      "id": "telegram-exito",
+      "name": "âœ… Aviso Ã‰xito",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1250, 100],
+      "credentials": { "telegramApi": { "id": "TU_ID", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('ðŸ“© Recibir Imagen').item.json.message.chat.id }}",
+        "text": "=âš ï¸ Este pago (Ref: {{ $('ðŸ” OCR FastAPI').item.json.referencia }}) ya existe en el sistema (duplicado)."
+      },
+      "id": "telegram-error",
+      "name": "âš ï¸ Aviso Duplicado",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1250, -100],
+      "credentials": { "telegramApi": { "id": "TU_ID", "name": "Telegram Bot" } }
+    }
+  ],
+  "connections": {
+    "ðŸ“© Recibir Imagen": { "main": [[{ "node": "ðŸ” OCR FastAPI", "type": "main", "index": 0 }]] },
+    "ðŸ” OCR FastAPI": { "main": [[{ "node": "ðŸ“Ž Descargar Imagen", "type": "main", "index": 0 }]] },
+    "ðŸ“Ž Descargar Imagen": { "main": [[{ "node": "ðŸ’¾ Guardar en BD", "type": "main", "index": 0 }]] },
+    "ðŸ’¾ Guardar en BD": { "main": [[{ "node": "âš ï¸ Â¿Hubo Error?", "type": "main", "index": 0 }]] },
+    "âš ï¸ Â¿Hubo Error?": {
+      "main": [
+        [{ "node": "âš ï¸ Aviso Duplicado", "type": "main", "index": 0 }],
+        [{ "node": "âœ… Aviso Ã‰xito", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "binaryMode": "separate" },
+  "tags": []
+}

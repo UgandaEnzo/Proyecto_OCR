@@ -1,5 +1,5 @@
-{
-  "name": "Automatización de Pagos (Flujo Automático)",
+﻿{
+  "name": "AutomatizaciÃ³n de Pagos (Flujo AutomÃ¡tico)",
   "nodes": [
     {
       "parameters": {
@@ -28,7 +28,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://92b0-162-43-188-30.ngrok-free.app/detectar-banco/",
+        "url": "https://proyecto-ocr-8n3s.onrender.com/detectar-banco/",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -84,7 +84,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://92b0-162-43-188-30.ngrok-free.app/registrar-pago-confirmado/",
+        "url": "https://proyecto-ocr-8n3s.onrender.com/registrar-pago-confirmado/",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -152,11 +152,11 @@
     {
       "parameters": {
         "chatId": "={{ $('Recibir Imagen (Telegram)1').item.json.message.chat.id }}",
-        "text": "=✅ ¡Pago registrado exitosamente!\n\n🏦 Banco: {{ $('OCR FastAPI1').item.json.banco_predicho }}\n📝 Referencia: {{ $('OCR FastAPI1').item.json.referencia }}\n💰 Monto: {{ $('OCR FastAPI1').item.json.monto }} Bs.",
+        "text": "=âœ… Â¡Pago registrado exitosamente!\n\nðŸ¦ Banco: {{ $('OCR FastAPI1').item.json.banco_predicho }}\nðŸ“ Referencia: {{ $('OCR FastAPI1').item.json.referencia }}\nðŸ’° Monto: {{ $('OCR FastAPI1').item.json.monto }} Bs.",
         "additionalFields": {}
       },
       "id": "866eb44d-e589-4f2f-b873-24428cce6179",
-      "name": "Aviso Éxito",
+      "name": "Aviso Ã‰xito",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.1,
       "position": [
@@ -173,7 +173,7 @@
     {
       "parameters": {
         "chatId": "={{ $('Recibir Imagen (Telegram)1').item.json.message.chat.id }}",
-        "text": "=⚠️ Atención: Hubo un problema al registrar el pago.\n\nEs posible que este pago (Referencia: {{ $('OCR FastAPI1').item.json.referencia }}) **ya se encuentre duplicado** en el sistema.",
+        "text": "=âš ï¸ AtenciÃ³n: Hubo un problema al registrar el pago.\n\nEs posible que este pago (Referencia: {{ $('OCR FastAPI1').item.json.referencia }}) **ya se encuentre duplicado** en el sistema.",
         "additionalFields": {}
       },
       "id": "999eb44d-e589-4f2f-b873-24428cce6179",
@@ -249,7 +249,7 @@
         ],
         [
           {
-            "node": "Aviso Éxito",
+            "node": "Aviso Ã‰xito",
             "type": "main",
             "index": 0
           }
