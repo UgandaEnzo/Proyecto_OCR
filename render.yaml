@@ -10,13 +10,13 @@ services:
       - key: PYTHON_VERSION
         value: 3.12.0
       - key: DATABASE_URL
-        value: postgresql://postgres.jruvxnwqmlueihovtccr:18nigher27yara@aws-1-us-east-2.pooler.supabase.com:6543/postgres
+        sync: false
       - key: GROQ_API_KEY
-        value: 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
+        sync: false
       - key: GROQ_MODEL
         value: llama-3.3-70b-versatile
       - key: API_KEY
-        value: miclave123
+        sync: false
       - key: LOG_LEVEL
         value: INFO
       - key: MOTOR_OCR_ACTIVO
