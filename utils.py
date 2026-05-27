@@ -393,7 +393,7 @@ def _comprimir_imagen_para_groq(image_bytes: bytes, max_side: int=720, quality: 
         logger.debug('No se pudo comprimir la imagen para Groq, se usa el original: %s', e)
         return image_bytes
 
-VISION_MODEL = "llama-3.2-11b-vision-preview"
+VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 async def _detectar_banco_con_groq(image_bytes: bytes) -> dict:
     api_key = os.getenv('GROQ_API_KEY', '').strip()
@@ -421,6 +421,22 @@ async def _detectar_banco_con_groq(image_bytes: bytes) -> dict:
         logger.warning('Groq Vision fallo: %s', e)
         return {}
 
+def _parse_json_response(content: str) -> dict | None:
+    """Extrae y parsea el primer JSON object de un texto."""
+    if not content:
+        return None
+    encontrado = re.search(r'\{.*\}', content, re.DOTALL)
+    if encontrado:
+        try:
+            return json.loads(encontrado.group(0))
+        except json.JSONDecodeError:
+            pass
+    try:
+        return json.loads(content.strip())
+    except (json.JSONDecodeError, ValueError):
+        pass
+    return None
+
 async def _extraer_datos_vision(image_bytes: bytes) -> dict | None:
     """Envía imagen a Groq Vision y extrae monto, referencia, banco, cedula y sudeban_code."""
     api_key = os.getenv('GROQ_API_KEY', '').strip()
@@ -431,22 +447,26 @@ async def _extraer_datos_vision(image_bytes: bytes) -> dict | None:
         client = AsyncGroq(api_key=api_key)
         compressed = _comprimir_imagen_para_groq(image_bytes)
         image_b64 = base64.b64encode(compressed).decode('utf-8')
-        prompt_text = """Eres un extractor de datos de comprobantes de pago venezolanos.
-Analiza la imagen y devuelve SOLO un JSON válido con estos campos:
-- "monto": monto como número float (ej: 1500.50)
-- "referencia": número de referencia/confirmación (string de dígitos)
-- "banco": nombre del banco emisor
-- "cedula": cédula de identidad si aparece
-- "sudeban_code": código SUDEBAN de 4 dígitos si aparece
-Responde ÚNICAMENTE con el JSON, sin texto adicional."""
+        prompt_text = """Eres un extractor de datos de comprobantes de pago venezolanos. Analiza la imagen y devuelve SOLO un JSON valido con estos campos: "monto" (numero float), "referencia" (string de digitos), "banco" (nombre del banco), "cedula" (string si aparece), "sudeban_code" (4 digitos si aparece). Si un campo no esta visible, usa null. Responde UNICAMENTE con el JSON."""
         response = await client.chat.completions.create(
             messages=[{"role": "user", "content": [{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}, {"type": "text", "text": prompt_text}]}],
             model=VISION_MODEL, temperature=0.0, max_tokens=300
         )
-        content = response.choices[0].message.content or ""
-        encontrado = re.search(r'\{.*\}', content, re.DOTALL)
-        if encontrado:
-            return json.loads(encontrado.group(0))
+        content = ''
+        if getattr(response, 'choices', None):
+            msg = response.choices[0].message
+            if isinstance(msg, dict):
+                content = msg.get('content', '')
+            elif hasattr(msg, 'content'):
+                content = msg.content or ''
+            else:
+                content = str(msg or '')
+        result = _parse_json_response(content)
+        if result:
+            logger.info('Vision extrajo: ref=%s monto=%s banco=%s', result.get('referencia'), result.get('monto'), result.get('banco'))
+        else:
+            logger.warning('Vision no pudo extraer JSON de: %s', content[:200])
+        return result
     except Exception as e:
         logger.warning('Groq Vision extracción falló: %s', e)
     return None
