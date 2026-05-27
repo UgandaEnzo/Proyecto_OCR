@@ -393,6 +393,8 @@ def _comprimir_imagen_para_groq(image_bytes: bytes, max_side: int=720, quality: 
         logger.debug('No se pudo comprimir la imagen para Groq, se usa el original: %s', e)
         return image_bytes
 
+VISION_MODEL = "llama-3.2-11b-vision-preview"
+
 async def _detectar_banco_con_groq(image_bytes: bytes) -> dict:
     api_key = os.getenv('GROQ_API_KEY', '').strip()
     if not api_key:
@@ -403,7 +405,7 @@ async def _detectar_banco_con_groq(image_bytes: bytes) -> dict:
         image_bytes_for_groq = _comprimir_imagen_para_groq(image_bytes)
         image_b64 = base64.b64encode(image_bytes_for_groq).decode('utf-8')
         prompt_text = 'Eres un experto en reconocer bancos venezolanos a partir de comprobantes de pago. Devuelve un JSON válido con los campos banco_predicho y sudeban_code. Si no puedes identificar el banco, usa Desconocido. Responde únicamente con JSON válido, sin texto adicional.'
-        response = await client.chat.completions.create(messages=[{'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': image_b64}}, {'type': 'text', 'text': prompt_text}]}], model=os.getenv('GROQ_MODEL', 'llama-3.2-11b-vision-preview'), temperature=0.0, max_tokens=150)
+        response = await client.chat.completions.create(messages=[{'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': image_b64}}, {'type': 'text', 'text': prompt_text}]}], model=VISION_MODEL, temperature=0.0, max_tokens=150)
         content = ''
         if getattr(response, 'choices', None):
             choice = response.choices[0]

@@ -1,6 +1,7 @@
 # Core Web Framework
 fastapi>=0.118.0,<0.121
 uvicorn[standard]>=0.30.0,<0.32
+gunicorn>=23.0.0,<25.0
 python-multipart>=0.0.8,<0.2
 
 # Data & Database

@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: conciliacion-pagos
+    runtime: python
+    region: ohio
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: ./start.sh
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: DATABASE_URL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: API_KEY
+        sync: false
+      - key: LOG_LEVEL
+        value: INFO
