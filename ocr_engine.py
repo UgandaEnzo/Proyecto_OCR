@@ -1,6 +1,8 @@
 import os
 import re
 import json
+import io
+import base64
 import cv2
 from groq import AsyncGroq
 import numpy as np
@@ -119,10 +121,53 @@ def extract_sudeban_code(texto):
     return None
 
 
+VISION_MODEL = "llama-3.2-11b-vision-preview"
+
+
+async def _extraer_datos_con_vision(image_bytes: bytes) -> dict | None:
+    """Envía la imagen directamente a Groq Vision para extraer todos los datos del comprobante."""
+    api_key = os.getenv("GROQ_API_KEY", "").strip()
+    if not api_key:
+        return None
+    try:
+        from groq import AsyncGroq
+        client = AsyncGroq(api_key=api_key)
+        with Image.open(io.BytesIO(image_bytes)) as img:
+            img = img.convert("RGB")
+            max_dim = max(img.width, img.height)
+            if max_dim > 720:
+                scale = 720 / max_dim
+                img = img.resize((max(1, int(img.width * scale)), max(1, int(img.height * scale))), Image.Resampling.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=60, optimize=True)
+            compressed = buf.getvalue()
+        image_b64 = base64.b64encode(compressed).decode("utf-8")
+        prompt = """Eres un extractor de datos de comprobantes de pago venezolanos.
+Analiza la imagen y devuelve SOLO un JSON válido con estos campos:
+- "monto": el monto como número float (ej: 1500.50)
+- "referencia": el número de referencia/confirmación (string de dígitos)
+- "banco": nombre del banco emisor
+- "cedula": cédula de identidad si aparece
+- "sudeban_code": código SUDEBAN de 4 dígitos si aparece
+
+Responde ÚNICAMENTE con el JSON, sin texto adicional."""
+        response = await client.chat.completions.create(
+            messages=[{"role": "user", "content": [{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}, {"type": "text", "text": prompt}]}],
+            model=VISION_MODEL, temperature=0.0, max_tokens=300
+        )
+        content = response.choices[0].message.content or ""
+        encontrado = re.search(r'\{.*\}', content, re.DOTALL)
+        if encontrado:
+            return json.loads(encontrado.group(0))
+    except Exception as e:
+        print(f"⚠️ [VISION] Error extrayendo datos con Groq Vision: {e}")
+    return None
+
+
 async def procesar_pago_ocr(image_path, aggressive=False):
-    """Flujo Principal Optimizado: RapidOCR -> Groq (Extractor Principal asíncrono)."""
-    # 1. Carga de imagen con validación
+    """Flujo Principal: RapidOCR -> Groq, con fallback a Groq Vision si no hay OCR local."""
     img_cv = cv2.imread(image_path)
+    img_bytes = None
     if img_cv is None:
         try:
             pil_img = Image.open(image_path).convert("RGB")
@@ -131,18 +176,28 @@ async def procesar_pago_ocr(image_path, aggressive=False):
             print(f"❌ [OCR] Imagen inválida o ilegible: {e}")
             return {"referencia": "No detectada", "monto": 0.0, "banco_predicho": "Desconocido", "texto_completo": ""}
 
-    # 2. Ejecutar RapidOCR (Extracción de texto base)
     texto_completo = extraer_texto(image_path)
-    
-    # 3. Procesar texto bruto con IA (Groq asíncrono) - Ahora es el filtro principal
-    ai_data = await limpiar_datos_ia(texto_completo)
+    ai_data = None
+
+    # Si hay texto OCR, usa Groq texto
+    if texto_completo.strip():
+        ai_data = await limpiar_datos_ia(texto_completo)
+
+    # Fallback: si no hay OCR o no se extrajeron datos, usa Groq Vision
+    if not ai_data:
+        with open(image_path, "rb") as f:
+            img_bytes = f.read()
+        vision_data = await _extraer_datos_con_vision(img_bytes)
+        if vision_data:
+            texto_completo = texto_completo or f"Vision: ref={vision_data.get('referencia')} monto={vision_data.get('monto')}"
+            ai_data = vision_data
+
     pred_banco_ia = None
     pred_sudeban = None
     if ai_data and isinstance(ai_data, dict):
         pred_banco_ia = ai_data.get("banco")
         pred_sudeban = ai_data.get("sudeban_code")
 
-    # 4. Detección robusta de banco usando heurísticas y códigos SUDEBAN
     strategy = bank_rules.get_bank_strategy(texto_completo, img_cv)
     banco_predicho = strategy.name if strategy else "Desconocido"
     sudeban_code = pred_sudeban or extract_sudeban_code(texto_completo)
@@ -168,7 +223,7 @@ async def procesar_pago_ocr(image_path, aggressive=False):
             "banco_predicho": banco_predicho,
             "sudeban_code": sudeban_code,
             "texto_completo": texto_completo,
-            "source": "AI_GROQ"
+            "source": "VISION" if not texto_completo.strip() else "AI_GROQ"
         }
 
     return {
