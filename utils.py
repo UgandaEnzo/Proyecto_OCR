@@ -405,7 +405,7 @@ async def _detectar_banco_con_groq(image_bytes: bytes) -> dict:
         image_bytes_for_groq = _comprimir_imagen_para_groq(image_bytes)
         image_b64 = base64.b64encode(image_bytes_for_groq).decode('utf-8')
         prompt_text = 'Eres un experto en reconocer bancos venezolanos a partir de comprobantes de pago. Devuelve un JSON válido con los campos banco_predicho y sudeban_code. Si no puedes identificar el banco, usa Desconocido. Responde únicamente con JSON válido, sin texto adicional.'
-        response = await client.chat.completions.create(messages=[{'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': image_b64}}, {'type': 'text', 'text': prompt_text}]}], model=VISION_MODEL, temperature=0.0, max_tokens=150)
+        response = await client.chat.completions.create(messages=[{'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': f"data:image/jpeg;base64,{image_b64}"}}, {'type': 'text', 'text': prompt_text}]}], model=VISION_MODEL, temperature=0.0, max_tokens=150)
         content = ''
         if getattr(response, 'choices', None):
             choice = response.choices[0]
@@ -420,3 +420,33 @@ async def _detectar_banco_con_groq(image_bytes: bytes) -> dict:
     except Exception as e:
         logger.warning('Groq Vision fallo: %s', e)
         return {}
+
+async def _extraer_datos_vision(image_bytes: bytes) -> dict | None:
+    """Envía imagen a Groq Vision y extrae monto, referencia, banco, cedula y sudeban_code."""
+    api_key = os.getenv('GROQ_API_KEY', '').strip()
+    if not api_key:
+        return None
+    try:
+        from groq import AsyncGroq
+        client = AsyncGroq(api_key=api_key)
+        compressed = _comprimir_imagen_para_groq(image_bytes)
+        image_b64 = base64.b64encode(compressed).decode('utf-8')
+        prompt_text = """Eres un extractor de datos de comprobantes de pago venezolanos.
+Analiza la imagen y devuelve SOLO un JSON válido con estos campos:
+- "monto": monto como número float (ej: 1500.50)
+- "referencia": número de referencia/confirmación (string de dígitos)
+- "banco": nombre del banco emisor
+- "cedula": cédula de identidad si aparece
+- "sudeban_code": código SUDEBAN de 4 dígitos si aparece
+Responde ÚNICAMENTE con el JSON, sin texto adicional."""
+        response = await client.chat.completions.create(
+            messages=[{"role": "user", "content": [{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}, {"type": "text", "text": prompt_text}]}],
+            model=VISION_MODEL, temperature=0.0, max_tokens=300
+        )
+        content = response.choices[0].message.content or ""
+        encontrado = re.search(r'\{.*\}', content, re.DOTALL)
+        if encontrado:
+            return json.loads(encontrado.group(0))
+    except Exception as e:
+        logger.warning('Groq Vision extracción falló: %s', e)
+    return None
