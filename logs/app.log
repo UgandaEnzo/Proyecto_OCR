@@ -234,3 +234,18 @@ connection to server at "aws-1-us-east-2.pooler.supabase.com" (3.131.201.192), p
 2026-05-23 18:21:04,478 WARNING ocr_api - Groq Vision fallo: Error code: 400 - {'error': {'message': 'messages[0].content must be a string', 'type': 'invalid_request_error', 'param': 'messages[0].content'}}
 2026-05-25 16:45:56,156 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
 2026-05-25 16:45:56,159 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-05-28 20:08:54,891 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-05-28 20:08:54,894 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-05-28 20:15:07,191 WARNING ocr_api - Groq Vision fallo: Error code: 400 - {'error': {'message': 'messages[0].content must be a string', 'type': 'invalid_request_error', 'param': 'messages[0].content'}}
+2026-06-14 14:16:47,016 ERROR ocr_api - ❌ Error crítico al inicializar la base de datos: (psycopg2.OperationalError) connection to server at "aws-1-us-east-2.pooler.supabase.com" (13.58.13.125), port 6543 failed: FATAL:  (ENOTFOUND) tenant/user postgres.jruvxnwqmlueihovtccr not found
+connection to server at "aws-1-us-east-2.pooler.supabase.com" (13.58.13.125), port 6543 failed: FATAL:  (ENOTFOUND) tenant/user postgres.jruvxnwqmlueihovtccr not found
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-06-14 14:17:58,288 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-06-14 14:17:58,289 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-06-14 15:02:56,620 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-06-14 15:02:56,620 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-06-14 15:03:24,367 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-06-14 15:03:24,368 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-06-14 15:23:34,668 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-06-14 15:23:34,669 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)

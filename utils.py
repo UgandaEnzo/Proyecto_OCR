@@ -220,17 +220,9 @@ def _crear_excel_reporte(resultados: List[dict], pagos_detalle: List[models.Pago
     header_fill = PatternFill(start_color='1e3a8a', end_color='1e3a8a', fill_type='solid')
     header_font = Font(color='FFFFFF', bold=True)
     right_align = Alignment(horizontal='right')
-    ws.append(['Reporte de Conciliación', tipo_reporte.title()])
+    ws.append(['Reporte de Conciliación Bancaria', tipo_reporte.title()])
     ws.append(['Generado', datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
     ws.append(['Periodo', start_date.strftime('%Y-%m-%d') if start_date else 'Completo', end_date.strftime('%Y-%m-%d') if end_date else 'Completo'])
-    ws.append([])
-    sudeban_summary = _agrupar_totales_sudeban(pagos_detalle)
-    ws.append(['Código SUDEBAN', 'Banco Origen', 'Total Bs', 'Total USD', 'Conteo'])
-    for cell in ws[5]:
-        cell.fill = header_fill
-        cell.font = header_font
-    for row in sudeban_summary:
-        ws.append([row['sudeban_code'], row['banco_label'], row['total_bs'], row['total_usd'], row['conteo']])
     ws.append([])
     ws.append(['Resumen Agregado'])
     ws.append(['Periodo', 'Desde', 'Hasta', 'Total Bs', 'Total USD', 'Conteo'])
@@ -258,25 +250,26 @@ def _crear_excel_reporte(resultados: List[dict], pagos_detalle: List[models.Pago
                         lines = (len(cell.value) - 1) // 30 + 1
                         current_height = sheet.row_dimensions[cell.row].height or 15
                         sheet.row_dimensions[cell.row].height = max(current_height, lines * 15)
-        for row in sheet.iter_rows(min_row=1, max_row=sheet.max_row):
+        for row in sheet.iter_rows(min_row=2, max_row=sheet.max_row):
             for cell in row:
-                if cell.column_letter in ('C', 'D') and isinstance(cell.value, (int, float)):
-                    cell.number_format = '#,##0.00 "Bs"'
-                if cell.column_letter == 'E' and isinstance(cell.value, (int, float)):
+                if isinstance(cell.value, (int, float)):
                     cell.number_format = '#,##0.00'
+                    cell.alignment = right_align
     ws_det = wb.create_sheet(title='Detalle de Pagos')
-    ws_det.append(['Referencia', 'Banco Origen', 'Fecha', 'Monto (Bs)', 'Tasa ($)', 'Monto ($)'])
-    for cell in ws_det[1]:
+    ws_det.append(['Detalle Individual de Pagos'])
+    ws_det.append([])
+    ws_det.append(['Referencia', 'Banco', 'Fecha', 'Monto Bs', 'Tasa ($)', 'Monto USD'])
+    for cell in ws_det[3]:
         cell.fill = header_fill
         cell.font = header_font
-    for p in pagos_detalle:
-        ws_det.append([p.referencia, p.banco, p.fecha_registro.strftime('%Y-%m-%d %H:%M') if p.fecha_registro else 'N/A', parse_monto_string(p.monto), parse_monto_string(p.tasa_cambio), parse_monto_string(p.monto_usd)])
+    if pagos_detalle:
+        for p in pagos_detalle:
+            ws_det.append([p.referencia, p.banco, p.fecha_registro.strftime('%Y-%m-%d %H:%M') if p.fecha_registro else 'N/A', parse_monto_string(p.monto), parse_monto_string(p.tasa_cambio), parse_monto_string(p.monto_usd)])
+    else:
+        ws_det.append(['Sin movimientos', '-', '-', '-', '-', '-'])
     for row in ws_det.iter_rows(min_row=2, max_row=ws_det.max_row):
         for cell in row:
-            if cell.column_letter == 'D' and isinstance(cell.value, (int, float)):
-                cell.number_format = '#,##0.00 "Bs"'
-                cell.alignment = right_align
-            if cell.column_letter in ('E', 'F') and isinstance(cell.value, (int, float)):
+            if isinstance(cell.value, (int, float)):
                 cell.number_format = '#,##0.00'
                 cell.alignment = right_align
     buffer = io.BytesIO()
@@ -306,21 +299,6 @@ def _crear_pdf_reporte(resultados: List[dict], pagos_detalle: List[models.Pago],
     filtro_texto = ' - '.join(range_parts) if range_parts else 'Rango: completo'
     story.append(Paragraph(filtro_texto, normal_style))
     story.append(Spacer(1, 15))
-    sudeban_summary = _agrupar_totales_sudeban(pagos_detalle)
-    story.append(Paragraph('Resumen por Código SUDEBAN', section_style))
-    data_sudeban = [['Código SUDEBAN', 'Banco Origen', 'Total Bs', 'Total USD', 'Conteo']]
-    for item in sudeban_summary:
-        data_sudeban.append([item['sudeban_code'], item['banco_label'], f"{item['total_bs']:.2f}", f"{item['total_usd']:.2f}", str(item['conteo'])])
-    if len(data_sudeban) == 1:
-        data_sudeban.append(['No hay datos', '', '', '', ''])
-    table_sudeban = Table(data_sudeban, colWidths=[90, 160, 90, 90, 60])
-    style_sudeban = [('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a8a')), ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke), ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'), ('ALIGN', (2, 1), (3, -1), 'RIGHT'), ('ALIGN', (4, 1), (4, -1), 'CENTER'), ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1'))]
-    for row_idx in range(1, len(data_sudeban)):
-        if row_idx % 2 == 1:
-            style_sudeban.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor('#f3f4f6')))
-    table_sudeban.setStyle(TableStyle(style_sudeban))
-    story.append(table_sudeban)
-    story.append(Spacer(1, 20))
     story.append(Paragraph('Resumen Agregado', section_style))
     periodo_style = ParagraphStyle('PeriodoCell', parent=normal_style, fontName='Helvetica', fontSize=8, leading=10, wordWrap='CJK')
     data = [['Periodo', 'Desde', 'Hasta', 'Total Bs', 'Total USD', 'Conteo']]
@@ -339,11 +317,11 @@ def _crear_pdf_reporte(resultados: List[dict], pagos_detalle: List[models.Pago],
     story.append(Paragraph('Detalle Individual de Pagos', section_style))
     data_det = [['Referencia', 'Banco', 'Fecha', 'Monto Bs', 'Tasa ($)', 'Monto USD']]
     for p in pagos_detalle:
-        data_det.append([p.referencia, p.banco or '-', p.fecha_registro.strftime('%Y-%m-%d') if p.fecha_registro else 'N/A', f'{parse_monto_string(p.monto):.2f}', f'{parse_monto_string(p.tasa_cambio):.2f}', f'{parse_monto_string(p.monto_usd):.2f}'])
+        data_det.append([p.referencia, p.banco or '-', p.fecha_registro.strftime('%Y-%m-%d %H:%M') if p.fecha_registro else 'N/A', f'{parse_monto_string(p.monto):.2f}', f'{parse_monto_string(p.tasa_cambio):.2f}', f'{parse_monto_string(p.monto_usd):.2f}'])
     if len(data_det) == 1:
         data_det.append(['Sin movimientos', '-', '-', '-', '-', '-'])
-    table_det = Table(data_det, colWidths=[80, 110, 70, 75, 55, 75])
-    style_det = [('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a8a')), ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke), ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'), ('ALIGN', (3, 1), (3, -1), 'RIGHT'), ('ALIGN', (4, 1), (5, -1), 'RIGHT'), ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1'))]
+    table_det = Table(data_det, colWidths=[90, 130, 85, 75, 60, 75])
+    style_det = [('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a8a')), ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke), ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'), ('ALIGN', (3, 1), (5, -1), 'RIGHT'), ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1'))]
     for row_idx in range(1, len(data_det)):
         if row_idx % 2 == 1:
             style_det.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor('#f3f4f6')))
