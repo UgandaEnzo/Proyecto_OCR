@@ -481,6 +481,10 @@ createApp({
                 this.showToast('La cédula debe contener solo números.', 'warning');
                 return;
             }
+            if (cedula.length < 7 || cedula.length > 8) {
+                this.showToast('La cédula debe tener entre 7 y 8 dígitos.', 'warning');
+                return;
+            }
             const telefono = this.nuevoCliente.telefono ? this.nuevoCliente.telefono.trim() : '';
             if (telefono && !/^[0-9]+$/.test(telefono)) {
                 this.showToast('El teléfono debe contener solo números.', 'warning');
@@ -531,6 +535,10 @@ createApp({
             const cedula = this.editandoCliente.cedula.trim();
             if (!/^[0-9]+$/.test(cedula)) {
                 this.showToast('La cédula debe contener solo números.', 'warning');
+                return;
+            }
+            if (cedula.length < 7 || cedula.length > 8) {
+                this.showToast('La cédula debe tener entre 7 y 8 dígitos.', 'warning');
                 return;
             }
             const telefono = this.editandoCliente.telefono ? this.editandoCliente.telefono.trim() : '';

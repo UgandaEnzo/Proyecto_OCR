@@ -264,7 +264,7 @@ def _crear_excel_reporte(resultados: List[dict], pagos_detalle: List[models.Pago
         cell.font = header_font
     if pagos_detalle:
         for p in pagos_detalle:
-            ws_det.append([p.referencia, p.banco, p.fecha_registro.strftime('%Y-%m-%d %H:%M') if p.fecha_registro else 'N/A', parse_monto_string(p.monto), parse_monto_string(p.tasa_cambio), parse_monto_string(p.monto_usd)])
+            ws_det.append([p.referencia, p.banco or '-', p.fecha_registro.strftime('%Y-%m-%d %H:%M') if p.fecha_registro else 'N/A', parse_monto_string(p.monto), parse_monto_string(p.tasa_cambio), parse_monto_string(p.monto_usd)])
     else:
         ws_det.append(['Sin movimientos', '-', '-', '-', '-', '-'])
     for row in ws_det.iter_rows(min_row=2, max_row=ws_det.max_row):
