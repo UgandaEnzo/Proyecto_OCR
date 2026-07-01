@@ -213,65 +213,113 @@ def _agrupar_totales_sudeban(pagos_detalle: List[models.Pago]) -> List[dict]:
 
 def _crear_excel_reporte(resultados: List[dict], pagos_detalle: List[models.Pago], tipo_reporte: str, start_date: Optional[datetime], end_date: Optional[datetime]) -> bytes:
     from openpyxl import Workbook
-    from openpyxl.styles import PatternFill, Font, Alignment
+    from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
     wb = Workbook()
     ws = wb.active
-    ws.title = 'Resumen'
+    ws.title = 'Reporte'
     header_fill = PatternFill(start_color='1e3a8a', end_color='1e3a8a', fill_type='solid')
-    header_font = Font(color='FFFFFF', bold=True)
-    right_align = Alignment(horizontal='right')
+    sub_header_fill = PatternFill(start_color='dbeafe', end_color='dbeafe', fill_type='solid')
+    header_font = Font(color='FFFFFF', bold=True, size=11)
+    title_font = Font(bold=True, size=13)
+    section_font = Font(bold=True, size=11)
+    normal_font = Font(size=10)
+    thin_border = Border(
+        bottom=Side(style='thin', color='e5e7eb'),
+        left=Side(style='thin', color='e5e7eb'),
+        right=Side(style='thin', color='e5e7eb')
+    )
+    right_align = Alignment(horizontal='right', vertical='center')
+    center_align = Alignment(horizontal='center', vertical='center')
+    wrap_align = Alignment(wrap_text=True, vertical='top')
+
+    # --- Metadata ---
     ws.append(['Reporte de Conciliación Bancaria', tipo_reporte.title()])
+    ws['A1'].font = title_font
+    ws['B1'].font = title_font
     ws.append(['Generado', datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
+    ws['A2'].font = normal_font
+    ws['B2'].font = normal_font
     ws.append(['Periodo', start_date.strftime('%Y-%m-%d') if start_date else 'Completo', end_date.strftime('%Y-%m-%d') if end_date else 'Completo'])
+    ws['A3'].font = normal_font
+    ws['B3'].font = normal_font
     ws.append([])
+
+    # --- Resumen Agregado ---
+    row_actual = ws.max_row + 1
     ws.append(['Resumen Agregado'])
+    ws[row_actual][0].font = section_font
     ws.append(['Periodo', 'Desde', 'Hasta', 'Total Bs', 'Total USD', 'Conteo'])
-    for cell in ws[ws.max_row]:
+    row_headers = ws.max_row
+    for cell in ws[row_headers]:
         cell.fill = header_fill
         cell.font = header_font
+        cell.alignment = center_align
     for item in resultados:
         periodo_text = _limpiar_periodo_texto(item['periodo'])
-        ws.append([periodo_text, item['desde'].strftime('%Y-%m-%d') if item['desde'] else '', item['hasta'].strftime('%Y-%m-%d') if item['hasta'] else '', parse_monto_string(item.get('total_bs')), parse_monto_string(item.get('total_usd')), item.get('conteo', 0)])
-        periodo_cell = ws[f'A{ws.max_row}']
-        periodo_cell.alignment = Alignment(wrap_text=True, vertical='top')
+        ws.append([periodo_text,
+                   item['desde'].strftime('%Y-%m-%d') if item['desde'] else '',
+                   item['hasta'].strftime('%Y-%m-%d') if item['hasta'] else '',
+                   parse_monto_string(item.get('total_bs')),
+                   parse_monto_string(item.get('total_usd')),
+                   item.get('conteo', 0)])
+        r = ws.max_row
+        for c in range(1, 7):
+            ws.cell(row=r, column=c).border = thin_border
+            ws.cell(row=r, column=c).font = normal_font
+            if c >= 4:
+                ws.cell(row=r, column=c).alignment = right_align
+                ws.cell(row=r, column=c).number_format = '#,##0.00'
+            if c == 6:
+                ws.cell(row=r, column=c).alignment = center_align
+        ws.cell(row=r, column=1).alignment = wrap_align
     totales = _agregar_total_reporte(resultados)
     ws.append(['Totales', '', '', totales['total_bs'], totales['total_usd'], totales['total_pagos']])
-    for sheet in wb.worksheets:
-        for columna in sheet.columns:
-            max_length = 0
-            column_letter = columna[0].column_letter
-            for cell in columna:
-                if cell.value is not None:
-                    max_length = max(max_length, len(str(cell.value)))
-            sheet.column_dimensions[column_letter].width = min(max_length + 2, 30)
-            if column_letter == 'A':
-                for cell in columna:
-                    if cell.value is not None and isinstance(cell.value, str) and (len(cell.value) > 30):
-                        lines = (len(cell.value) - 1) // 30 + 1
-                        current_height = sheet.row_dimensions[cell.row].height or 15
-                        sheet.row_dimensions[cell.row].height = max(current_height, lines * 15)
-        for row in sheet.iter_rows(min_row=2, max_row=sheet.max_row):
-            for cell in row:
-                if isinstance(cell.value, (int, float)):
-                    cell.number_format = '#,##0.00'
-                    cell.alignment = right_align
-    ws_det = wb.create_sheet(title='Detalle de Pagos')
-    ws_det.append(['Detalle Individual de Pagos'])
-    ws_det.append([])
-    ws_det.append(['Referencia', 'Banco', 'Fecha', 'Monto Bs', 'Tasa ($)', 'Monto USD'])
-    for cell in ws_det[3]:
+    r = ws.max_row
+    for c in range(1, 7):
+        ws.cell(row=r, column=c).font = Font(bold=True, size=10)
+        ws.cell(row=r, column=c).border = thin_border
+        if c >= 4:
+            ws.cell(row=r, column=c).alignment = right_align
+            ws.cell(row=r, column=c).number_format = '#,##0.00'
+        if c == 6:
+            ws.cell(row=r, column=c).alignment = center_align
+    ws.append([])
+
+    # --- Detalle Individual de Pagos ---
+    row_actual = ws.max_row + 1
+    ws.append(['Detalle Individual de Pagos'])
+    ws[row_actual][0].font = section_font
+    ws.append(['Referencia', 'Banco', 'Fecha', 'Monto Bs', 'Tasa ($)', 'Monto USD'])
+    row_headers = ws.max_row
+    for cell in ws[row_headers]:
         cell.fill = header_fill
         cell.font = header_font
+        cell.alignment = center_align
     if pagos_detalle:
         for p in pagos_detalle:
-            ws_det.append([p.referencia, p.banco or '-', p.fecha_registro.strftime('%Y-%m-%d %H:%M') if p.fecha_registro else 'N/A', parse_monto_string(p.monto), parse_monto_string(p.tasa_cambio), parse_monto_string(p.monto_usd)])
+            ws.append([p.referencia,
+                       p.banco or '-',
+                       p.fecha_registro.strftime('%Y-%m-%d %H:%M') if p.fecha_registro else 'N/A',
+                       parse_monto_string(p.monto),
+                       parse_monto_string(p.tasa_cambio),
+                       parse_monto_string(p.monto_usd)])
+            r = ws.max_row
+            for c in range(1, 7):
+                ws.cell(row=r, column=c).border = thin_border
+                ws.cell(row=r, column=c).font = normal_font
+                if c >= 4:
+                    ws.cell(row=r, column=c).alignment = right_align
+                    ws.cell(row=r, column=c).number_format = '#,##0.00'
     else:
-        ws_det.append(['Sin movimientos', '-', '-', '-', '-', '-'])
-    for row in ws_det.iter_rows(min_row=2, max_row=ws_det.max_row):
-        for cell in row:
-            if isinstance(cell.value, (int, float)):
-                cell.number_format = '#,##0.00'
-                cell.alignment = right_align
+        ws.append(['Sin movimientos', '-', '-', '-', '-', '-'])
+        for c in range(1, 7):
+            ws.cell(row=ws.max_row, column=c).alignment = center_align
+
+    # --- Ajuste de anchos de columna ---
+    col_widths = {1: 22, 2: 28, 3: 18, 4: 16, 5: 14, 6: 14}
+    for col, width in col_widths.items():
+        ws.column_dimensions[chr(64 + col)].width = width
+
     buffer = io.BytesIO()
     wb.save(buffer)
     buffer.seek(0)

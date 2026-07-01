@@ -502,7 +502,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" @click="closeNuevoClienteModal">Cancelar</button>
-                <button type="button" class="btn btn-primary" @click="agregarCliente" :disabled="savingCliente || !nuevoCliente.nombre || !nuevoCliente.cedula">
+                <button type="button" class="btn btn-primary" @click="agregarCliente" :disabled="savingCliente || !nuevoCliente.nombre || !nuevoCliente.cedula || nuevoCliente.cedula.length < 7 || nuevoCliente.cedula.length > 8">
                     <span v-if="savingCliente" class="spinner"></span>
                     {{ savingCliente ? ' Guardando...' : 'Guardar Cliente' }}
                 </button>
@@ -533,7 +533,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" @click="closeEditarClienteModal">Cancelar</button>
-                <button type="button" class="btn btn-primary" @click="guardarEdicion" :disabled="savingCliente || !editandoCliente.cedula">
+                <button type="button" class="btn btn-primary" @click="guardarEdicion" :disabled="savingCliente || !editandoCliente.cedula || editandoCliente.cedula.length < 7 || editandoCliente.cedula.length > 8">
                     <span v-if="savingCliente" class="spinner"></span>
                     {{ savingCliente ? ' Actualizando...' : 'Actualizar' }}
                 </button>

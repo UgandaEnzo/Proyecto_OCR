@@ -19,13 +19,24 @@ class ClienteBase(BaseModel):
     cedula: str
     telefono: Optional[str] = None
 
-    @field_validator('cedula', 'telefono')
+    @field_validator('cedula')
     @classmethod
-    def check_numeric(cls, v):
+    def check_cedula(cls, v):
         if v is not None and v != "":
             v = v.strip()
             if not v.isdigit():
-                raise ValueError('Este campo debe contener solo números')
+                raise ValueError('La cédula debe contener solo números')
+            if len(v) < 7 or len(v) > 8:
+                raise ValueError('La cédula debe tener entre 7 y 8 dígitos')
+        return v
+
+    @field_validator('telefono')
+    @classmethod
+    def check_telefono(cls, v):
+        if v is not None and v != "":
+            v = v.strip()
+            if not v.isdigit():
+                raise ValueError('El teléfono debe contener solo números')
         return v
 
 class Cliente(ClienteBase):

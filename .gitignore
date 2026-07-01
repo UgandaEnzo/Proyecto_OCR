@@ -1,7 +1,9 @@
 .venv/
+.venv_build/
 venv_produccion/
 dist/
 build/
+.ruff_cache/
 __pycache__/
 *.py[cod]
 *.pyo
@@ -10,4 +12,6 @@ __pycache__/
 .env
 .pytest_cache/
 logs/
+uploads/
 OcrApp.exe
+OcrApp.spec
