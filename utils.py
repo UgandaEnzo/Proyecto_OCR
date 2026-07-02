@@ -383,10 +383,16 @@ def _crear_nombre_archivo(tipo_reporte: str, formato: str) -> str:
     sufijo = datetime.now().strftime('%Y%m%d%H%M%S')
     return f'reportes-{tipo_reporte}-{sufijo}.{formato}'
 
+def _strip_thinking_tags(texto: str) -> str:
+    """Elimina bloques <think>...</think> de modelos Qwen, incluso si no está cerrado."""
+    texto = re.sub(r'<think>.*?</think>', '', texto, flags=re.DOTALL)
+    texto = re.sub(r'<think>.*', '', texto, flags=re.DOTALL)
+    return texto.strip()
+
 def _parse_groq_bank_response(texto: str) -> dict:
     if not texto:
         return {}
-    texto = texto.strip()
+    texto = _strip_thinking_tags(texto)
     try:
         encontrado = re.search('\\{.*\\}', texto, re.S)
         if encontrado:
@@ -431,7 +437,7 @@ async def _detectar_banco_con_groq(image_bytes: bytes) -> dict:
         image_bytes_for_groq = _comprimir_imagen_para_groq(image_bytes)
         image_b64 = base64.b64encode(image_bytes_for_groq).decode('utf-8')
         prompt_text = 'Eres un experto en reconocer bancos venezolanos a partir de comprobantes de pago. Devuelve un JSON válido con los campos banco_predicho y sudeban_code. Si no puedes identificar el banco, usa Desconocido. Responde únicamente con JSON válido, sin texto adicional.'
-        response = await client.chat.completions.create(messages=[{'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': f"data:image/jpeg;base64,{image_b64}"}}, {'type': 'text', 'text': prompt_text}]}], model=VISION_MODEL, temperature=0.0, max_tokens=150)
+        response = await client.chat.completions.create(messages=[{'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': f"data:image/jpeg;base64,{image_b64}"}}, {'type': 'text', 'text': prompt_text}]}], model=VISION_MODEL, temperature=0.0, max_tokens=500)
         content = ''
         if getattr(response, 'choices', None):
             choice = response.choices[0]
@@ -451,6 +457,7 @@ def _parse_json_response(content: str) -> dict | None:
     """Extrae y parsea el primer JSON object de un texto."""
     if not content:
         return None
+    content = _strip_thinking_tags(content)
     encontrado = re.search(r'\{.*\}', content, re.DOTALL)
     if encontrado:
         try:
@@ -476,7 +483,7 @@ async def _extraer_datos_vision(image_bytes: bytes) -> dict | None:
         prompt_text = """Eres un extractor de datos de comprobantes de pago venezolanos. Analiza la imagen y devuelve SOLO un JSON valido con estos campos: "monto" (numero float), "referencia" (string de digitos), "banco" (nombre del banco), "cedula" (string si aparece), "sudeban_code" (4 digitos si aparece). Si un campo no esta visible, usa null. Responde UNICAMENTE con el JSON."""
         response = await client.chat.completions.create(
             messages=[{"role": "user", "content": [{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}, {"type": "text", "text": prompt_text}]}],
-            model=VISION_MODEL, temperature=0.0, max_tokens=300
+            model=VISION_MODEL, temperature=0.0, max_tokens=500
         )
         content = ''
         if getattr(response, 'choices', None):

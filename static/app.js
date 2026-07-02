@@ -267,8 +267,11 @@ createApp({
                     this.uploadSudebanCode = data.sudeban_code || '';
                     this.uploadDetectedReferencia = data.referencia || '';
                     this.uploadDetectedMonto = data.monto || '';
-                    if (!this.uploadBank && this.uploadPredictedBank && this.bancosDisponibles.includes(this.uploadPredictedBank)) {
-                        this.uploadBank = this.uploadPredictedBank;
+                    if (!this.uploadBank && this.uploadPredictedBank) {
+                        const match = this.bancosDisponibles.find(
+                            b => b.toLowerCase() === this.uploadPredictedBank.toLowerCase()
+                        );
+                        if (match) this.uploadBank = match;
                     }
                 }
             } catch (err) {
@@ -335,9 +338,11 @@ createApp({
             }
         },
         applyDetectedBank() {
-            if (this.uploadPredictedBank && this.bancosDisponibles.includes(this.uploadPredictedBank)) {
-                this.uploadBank = this.uploadPredictedBank;
-            }
+            if (!this.uploadPredictedBank) return;
+            const match = this.bancosDisponibles.find(
+                b => b.toLowerCase() === this.uploadPredictedBank.toLowerCase()
+            );
+            if (match) this.uploadBank = match;
         },
         getEstadoBadgeClass(estado) {
             if (!estado) return 'badge-muted';

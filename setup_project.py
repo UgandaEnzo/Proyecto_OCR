@@ -29,15 +29,23 @@ def setup_and_build():
     spec_path = os.path.join(project_dir, 'OcrApp.spec')
 
     print("Limpiando instalaciones previas...")
-    for folder in ['build', 'dist', build_venv_dir]:
+    for folder in ['build', 'dist']:
         if os.path.exists(folder):
             shutil.rmtree(folder, ignore_errors=True)
 
-    print("Creando entorno virtual de empaquetado...")
-    if os.path.exists(build_venv_dir) and not os.path.exists(pyvenv_cfg):
-        print("Entorno virtual anterior incompleto detectado; se recreará.")
-        shutil.rmtree(build_venv_dir, ignore_errors=True)
+    # Si el venv está incompleto (sin pyvenv.cfg), forzar recreación completa
+    if os.path.exists(build_venv_dir):
+        if not os.path.exists(pyvenv_cfg):
+            print("Entorno virtual anterior incompleto detectado; se recreará.")
+            shutil.rmtree(build_venv_dir, ignore_errors=True)
+            if os.path.exists(build_venv_dir):
+                # Reintentar eliminación en Windows si quedan archivos
+                for _ in range(3):
+                    shutil.rmtree(build_venv_dir, ignore_errors=True)
+                    if not os.path.exists(build_venv_dir):
+                        break
 
+    print("Creando entorno virtual de empaquetado...")
     if not os.path.exists(python_venv):
         if not run_command([sys.executable, '-m', 'venv', build_venv_dir], "Creando entorno virtual"):
             return
