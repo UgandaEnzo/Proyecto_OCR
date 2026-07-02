@@ -88,6 +88,10 @@
                             <p>Total Bs: <strong>{{ formatNumero(item.total_bs) }}</strong></p>
                             <p>Total USD: <strong>{{ formatNumero(item.total_usd) }}</strong></p>
                             <p>Pagos: <strong>{{ item.conteo }}</strong></p>
+                            <div class="button-group mt-2" style="display: flex; gap: 0.4rem;">
+                                <button class="btn btn-sm btn-success" @click="exportarReportePeriodo('xlsx', item)" title="Descargar Excel de este periodo">📊 Excel</button>
+                                <button class="btn btn-sm btn-danger" @click="exportarReportePeriodo('pdf', item)" title="Descargar PDF de este periodo">📄 PDF</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -285,6 +289,29 @@
                         <input type="text" class="form-control" v-model="gestionApiKey" placeholder="Ingresa tu clave Groq aquí">
                     </div>
                     <button class="btn btn-primary" @click="guardarGestionApiKey">Guardar Clave Groq</button>
+
+                    <hr class="my-4">
+                    <h6 class="mb-3">Configuración OCR</h6>
+                    <div class="mb-3">
+                        <label class="form-label">Motor OCR</label>
+                        <div class="d-flex gap-3 align-items-center">
+                            <label class="ocr-option" :class="{ selected: gestionOcrMode === 'local' }">
+                                <input type="radio" v-model="gestionOcrMode" value="local">
+                                <span>Local (RapidOCR)</span>
+                            </label>
+                            <label class="ocr-option" :class="{ selected: gestionOcrMode === 'nube' }">
+                                <input type="radio" v-model="gestionOcrMode" value="nube">
+                                <span>Nube (Groq Vision)</span>
+                            </label>
+                        </div>
+                        <div v-if="gestionOcrMode === 'nube'" class="alert alert-warning mt-2" style="background: rgba(255,188,75,0.12); border-color: rgba(255,188,75,0.24); color: #ffe29e; padding: 0.75rem; border-radius: 0.75rem; font-size: 0.85rem;">
+                            ⚠️ Al usar el modo Nube se consumirán más tokens de Groq. Asegúrate de tener suficientes tokens disponibles en tu cuenta.
+                        </div>
+                    </div>
+                    <button class="btn btn-info" @click="aplicarCambiosOcr" :disabled="gestionOcrSaving">
+                        <span v-if="gestionOcrSaving" class="spinner"></span>
+                        {{ gestionOcrSaving ? ' Aplicando...' : 'Aplicar Cambios OCR' }}
+                    </button>
                 </div>
 
                 <div v-if="gestionTab === 'db'" class="gestion-panel">
@@ -437,7 +464,7 @@
         </div>
     </div>
 
-    <div v-if="showManualModal" class="modal-overlay" @click.self="closeManualModal">
+    <div v-if="showManualModal" class="modal-overlay" :class="{ 'modal-overlay-top': showImagenModal }" @click.self="closeManualModal">
         <div class="modal-window">
             <div class="modal-header">
                 <h5 class="modal-title">{{ editandoPagoId ? (editandoSoloBancoCliente ? 'Editar Banco y Cliente' : 'Editar Pago Manual') : 'Registrar Pago Manualmente' }}</h5>

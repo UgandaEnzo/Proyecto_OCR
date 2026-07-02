@@ -151,6 +151,9 @@ class GestionCredentials(BaseModel):
     admin_user: str
     admin_pass: str
 
+class GestionOcrMode(BaseModel):
+    modo: str
+
 class ConfirmBody(BaseModel):
     confirm: bool
 

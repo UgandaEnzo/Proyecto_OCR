@@ -84,13 +84,12 @@ Crea un archivo `.env` en la raíz del proyecto con al menos estas variables:
 ```env
 DATABASE_URL="postgresql://user:password@host:port/database"
 GROQ_API_KEY="gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-GROQ_MODEL="llama-3.2-11b-vision-preview"
+GROQ_MODEL="openai/gpt-oss-120b"
 LOG_LEVEL=INFO
 MAX_UPLOAD_MB=10
 ```
 
-> Nota: para detección visual se recomienda `GROQ_MODEL="llama-3.2-11b-vision-preview"`. Este proyecto usa Groq Vision para identificar banco, SUDEBAN, referencia y monto desde la imagen.
-> Si trabajas solo con texto o deseas ahorrar tokens, puedes usar un modelo de texto compatible de Groq.
+> Nota: para detección visual se usa `qwen/qwen3.6-27b` (hardcodeado en `utils.py`). Para el procesamiento de texto se recomienda `GROQ_MODEL="openai/gpt-oss-120b"`. Ambos modelos reemplazan a `llama-3.3-70b-versatile` y `meta-llama/llama-4-scout-17b-16e-instruct` que fueron deprecados por Groq en agosto 2026.
 >
 > Si no usas `DATABASE_URL`, puedes definir las variables separadas `DB_USER`, `DB_PASS`, `DB_HOST`, `DB_PORT` y `DB_NAME`.
 

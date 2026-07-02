@@ -21,7 +21,7 @@ Aplicación FastAPI para conciliación de pagos con detección OCR y soporte de 
 - Dependencias de desarrollo actualizadas en `requirements-dev.txt`.
 - Detección de banco usa ahora un endpoint `/detectar-banco-vision/` y compresión de imagen para reducir payload.
 - `OcrApp.spec` corregido para calcular `root_dir` con `sys.argv[0]` en lugar de `__file__`.
-- Se recomienda `GROQ_MODEL="llama-3.2-11b-vision-preview"` para detección visual con imágenes.
+- Se actualizó a `GROQ_MODEL="openai/gpt-oss-120b"` para texto y `VISION_MODEL="qwen/qwen3.6-27b"` para detección visual, ante la deprecación de `llama-3.3-70b-versatile` y `meta-llama/llama-4-scout-17b-16e-instruct` (agosto 2026).
 
 ## Dependencias clave
 

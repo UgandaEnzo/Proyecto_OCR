@@ -44,7 +44,7 @@ async def consultar_datos_ia(query: schemas.ChatQuery, db: Session=Depends(get_d
     try:
         from groq import AsyncGroq
         client = AsyncGroq(api_key=os.getenv('GROQ_API_KEY'))
-        response = await client.chat.completions.create(messages=[{'role': 'user', 'content': prompt}], model=os.getenv('GROQ_MODEL', 'llama-3.3-70b-versatile'), temperature=0.2)
+        response = await client.chat.completions.create(messages=[{'role': 'user', 'content': prompt}], model=os.getenv('GROQ_MODEL', 'openai/gpt-oss-120b'), temperature=0.2)
         return {'respuesta': response.choices[0].message.content}
     except Exception:
         return {'respuesta': 'No fue posible procesar la consulta IA en este momento. Comprueba la configuración de GROQ_API_KEY y vuelve a intentarlo.'}

@@ -76,6 +76,8 @@ createApp({
             gestionAdminPass: '',
             gestionClientesTotal: 0,
             gestionUltimosClientes: [],
+            gestionOcrMode: 'local',
+            gestionOcrSaving: false,
         };
     },
     computed: {
@@ -162,6 +164,33 @@ createApp({
                 link.remove();
             } catch (err) {
                 this.showToast('Error al exportar reporte', 'danger');
+            }
+        },
+        async exportarReportePeriodo(formato, item) {
+            const desde = item.desde ? new Date(item.desde).toISOString().split('T')[0] : '';
+            const hasta = item.hasta ? new Date(item.hasta).toISOString().split('T')[0] : '';
+            const params = new URLSearchParams();
+            params.set('tipo_reporte', this.reportPeriod);
+            params.set('format', formato);
+            if (desde) params.set('start_date', desde);
+            if (hasta) params.set('end_date', hasta);
+            const url = `/reportes/export/?${params.toString()}`;
+            try {
+                const resp = await fetch(url);
+                if (!resp.ok) {
+                    throw new Error('No se pudo exportar el periodo');
+                }
+                const blob = await resp.blob();
+                const periodoLabel = item.periodo ? item.periodo.replace(/[/\\?%*:|"<>]/g, '-') : 'periodo';
+                const filename = `reporte-${periodoLabel}-${formato}`;
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+            } catch (err) {
+                this.showToast('Error al exportar el periodo', 'danger');
             }
         },
         async refrescarTasaCalculadora() {
@@ -397,7 +426,7 @@ createApp({
                     this.closeUploadModal();
                     await this.cargar(this.page);
                 } else {
-                    this.uploadError = data.detail || data.error || data.message || 'Error al subir pago.';
+                    this.uploadError = data.detail || data.error || data.message || data.mensaje || 'Error al subir pago.';
                 }
             } catch (err) {
                 this.uploadError = 'Error de red al subir pago.';
@@ -449,7 +478,7 @@ createApp({
                     this.closeManualModal();
                     this.cargar(this.page);
                 } else {
-                    this.showToast(data.detail || data.error || 'Error al guardar pago manual', 'danger');
+                    this.showToast(data.detail || data.error || data.mensaje || 'Error al guardar pago manual', 'danger');
                 }
             } catch (err) {
                 this.showToast('Error al guardar pago manual', 'danger');
@@ -507,7 +536,7 @@ createApp({
                     this.closeNuevoClienteModal();
                     this.cargarClientes();
                 } else {
-                    this.showToast(data.detail || data.error || data.message || 'Error al agregar cliente', 'danger');
+                    this.showToast(data.detail || data.error || data.message || data.mensaje || 'Error al agregar cliente. Verifica que la cédula no esté duplicada y que todos los campos sean correctos.', 'danger');
                 }
             } catch (err) {
                 this.showToast('Error al agregar cliente', 'danger');
@@ -563,7 +592,7 @@ createApp({
                     this.closeEditarClienteModal();
                     this.cargarClientes();
                 } else {
-                    this.showToast(data.detail || data.error || data.message || 'Error al actualizar cliente', 'danger');
+                    this.showToast(data.detail || data.error || data.message || data.mensaje || 'Error al actualizar cliente. Verifica que la cédula no esté duplicada.', 'danger');
                 }
             } catch (err) {
                 this.showToast('Error al actualizar cliente', 'danger');
@@ -744,6 +773,7 @@ createApp({
             await this.cargarGestionStatus();
             await this.cargarCredenciales();
             await this.cargarGestionClientesSummary();
+            await this.cargarModoOcr();
         },
         async abrirConfigApi() {
             this.appApiKey = localStorage.getItem('apiKeyConciliacion') || '';
@@ -813,6 +843,41 @@ createApp({
                 }
             } catch (err) {
                 this.showToast('Error al guardar la clave Groq', 'danger');
+            }
+        },
+        async cargarModoOcr() {
+            try {
+                const resp = await fetch('/gestion/ocr/mode');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    this.gestionOcrMode = data.modo || 'local';
+                }
+            } catch (err) {
+                this.gestionOcrMode = 'local';
+            }
+        },
+        async aplicarCambiosOcr() {
+            if (!this.gestionOcrMode) {
+                this.showToast('Selecciona un modo OCR', 'warning');
+                return;
+            }
+            this.gestionOcrSaving = true;
+            try {
+                const resp = await fetch('/gestion/ocr/mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ modo: this.gestionOcrMode }),
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    this.showToast(data.mensaje || 'Modo OCR actualizado', 'success');
+                } else {
+                    this.showToast(data.detail || 'Error al actualizar modo OCR', 'danger');
+                }
+            } catch (err) {
+                this.showToast('Error al conectar con el servidor', 'danger');
+            } finally {
+                this.gestionOcrSaving = false;
             }
         },
         async exportarPagosCsv() {

@@ -76,7 +76,7 @@ async def _verificar_estado_groq(api_key: str) -> tuple[bool, str]:
     try:
         from groq import AsyncGroq
         client = AsyncGroq(api_key=api_key, timeout=3.0)
-        await client.chat.completions.create(messages=[{'role': 'user', 'content': 'Responde con pong'}], model=os.getenv('GROQ_MODEL', 'llama-3.3-70b-versatile'), temperature=0.0, max_tokens=1, timeout=3.0)
+        await client.chat.completions.create(messages=[{'role': 'user', 'content': 'Responde con pong'}], model=os.getenv('GROQ_MODEL', 'openai/gpt-oss-120b'), temperature=0.0, max_tokens=1, timeout=3.0)
         return (True, 'Clave Groq cargada y verificada.')
     except Exception as e:
         logger.warning('No se pudo verificar Groq API: %s', e)
@@ -419,7 +419,7 @@ def _comprimir_imagen_para_groq(image_bytes: bytes, max_side: int=720, quality: 
         logger.debug('No se pudo comprimir la imagen para Groq, se usa el original: %s', e)
         return image_bytes
 
-VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+VISION_MODEL = "qwen/qwen3.6-27b"
 
 async def _detectar_banco_con_groq(image_bytes: bytes) -> dict:
     api_key = os.getenv('GROQ_API_KEY', '').strip()

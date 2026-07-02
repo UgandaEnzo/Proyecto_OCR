@@ -440,6 +440,10 @@ a {
   overflow-y: auto;
 }
 
+.modal-overlay-top {
+  z-index: 1150;
+}
+
 .modal-window {
   width: min(100%, 900px);
   max-height: min(100vh, 92vh);
@@ -470,6 +474,27 @@ a {
   padding: 1rem 1.25rem 1.25rem;
   overflow-y: auto;
   max-height: calc(92vh - 8rem);
+}
+
+.ocr-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 0.75rem;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+  background: rgba(255,255,255,0.03);
+}
+
+.ocr-option.selected {
+  background: rgba(108, 180, 255, 0.15);
+  border-color: rgba(108, 180, 255, 0.4);
+}
+
+.ocr-option input[type="radio"] {
+  accent-color: #6cb4ff;
 }
 
 .upload-modal-grid {

@@ -122,3 +122,18 @@ def guardar_credenciales(data: schemas.GestionCredentials, db: Session=Depends(g
     os.environ['ADMIN_PASS'] = data.admin_pass.strip()
     return {'mensaje': 'Credenciales guardadas correctamente.'}
 
+@router.get('/gestion/ocr/mode')
+def obtener_modo_ocr(db: Session=Depends(get_db)):
+    modo = get_config_value(db, 'MOTOR_OCR_ACTIVO', 'rapidocr').lower()
+    return {'modo': 'local' if modo == 'rapidocr' else 'nube', 'modo_raw': modo}
+
+@router.post('/gestion/ocr/mode')
+def actualizar_modo_ocr(data: schemas.GestionOcrMode, db: Session=Depends(get_db)):
+    modo = data.modo.strip().lower()
+    if modo not in ['local', 'nube']:
+        raise HTTPException(status_code=400, detail='El modo OCR debe ser "local" o "nube".')
+    modo_raw = 'rapidocr' if modo == 'local' else 'groq_vision'
+    set_config_value(db, 'MOTOR_OCR_ACTIVO', modo_raw)
+    os.environ['MOTOR_OCR_ACTIVO'] = modo_raw
+    return {'mensaje': f'Modo OCR cambiado a {modo} correctamente.', 'modo': modo}
+
