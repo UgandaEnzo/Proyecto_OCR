@@ -62,6 +62,18 @@ else:
 connect_args = {}
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL, pool_pre_ping=True, connect_args=connect_args)
+
+# Forzar timezone local para que date_trunc funcione correctamente con TIMESTAMPTZ
+from sqlalchemy import event
+tz = os.getenv("TZ", "America/Caracas")
+@event.listens_for(engine, 'connect')
+def set_timezone(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute(f"SET TIME ZONE '{tz}'")
+    except Exception:
+        pass
+    cursor.close()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()

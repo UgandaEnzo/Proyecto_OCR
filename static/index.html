@@ -56,7 +56,7 @@
                 <div class="report-panel">
                     <div>
                         <label class="form-label">Periodo</label>
-                        <select class="form-select" v-model="reportPeriod" @change="cargarReportes" :disabled="fechaInicio || fechaFin">
+                        <select class="form-select" v-model="reportPeriod" @change="cargarReportes" :disabled="fechaInicio !== '' || fechaFin !== ''">
                             <option value="diario">Diario</option>
                             <option value="semanal">Semanal</option>
                             <option value="quincenal">Quincenal</option>
@@ -65,7 +65,7 @@
                             <option value="semestral">Semestral</option>
                             <option value="anual">Anual</option>
                         </select>
-                        <small v-if="fechaInicio || fechaFin" class="text-warning">Deshabilitado mientras hay fechas personalizadas</small>
+                        <small v-if="fechaInicio !== '' || fechaFin !== ''" class="text-warning">Deshabilitado mientras hay fechas personalizadas</small>
                     </div>
                     <div>
                         <label class="form-label">Fecha inicio</label>
@@ -88,10 +88,6 @@
                             <p>Total Bs: <strong>{{ formatNumero(item.total_bs) }}</strong></p>
                             <p>Total USD: <strong>{{ formatNumero(item.total_usd) }}</strong></p>
                             <p>Pagos: <strong>{{ item.conteo }}</strong></p>
-                            <div class="button-group mt-2" style="display: flex; gap: 0.4rem;">
-                                <button class="btn btn-sm btn-success" @click="exportarReportePeriodo('xlsx', item)" title="Descargar Excel de este periodo">📊 Excel</button>
-                                <button class="btn btn-sm btn-danger" @click="exportarReportePeriodo('pdf', item)" title="Descargar PDF de este periodo">📄 PDF</button>
-                            </div>
                         </div>
                     </div>
                 </div>

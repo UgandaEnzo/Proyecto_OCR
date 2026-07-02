@@ -89,16 +89,27 @@ def _agregar_total_reporte(resultado: List[dict]) -> dict:
     return {'total_bs': total_bs, 'total_usd': total_usd, 'total_pagos': total_pagos}
 
 def _query_reporte(db: Session, tipo_reporte: str, fecha_inicio: Optional[datetime], fecha_fin: Optional[datetime]) -> List[dict]:
+    if tipo_reporte == 'general':
+        query = db.query(func.sum(models.Pago.monto).label('total_bs'), func.coalesce(func.sum(models.Pago.monto_usd), 0).label('total_usd'), func.count(models.Pago.id).label('conteo'), func.min(models.Pago.fecha_registro).label('desde'), func.max(models.Pago.fecha_registro).label('hasta'))
+        if fecha_inicio:
+            query = query.filter(models.Pago.fecha_registro >= fecha_inicio)
+        if fecha_fin:
+            query = query.filter(models.Pago.fecha_registro <= fecha_fin)
+        result = query.first()
+        if result:
+            return [{'periodo': 'General', 'desde': result.desde, 'hasta': result.hasta, 'total_bs': float(result.total_bs or 0), 'total_usd': float(result.total_usd or 0), 'conteo': int(result.conteo or 0)}]
+        return []
     interval_map = {'diario': 'day', 'semanal': 'week', 'mensual': 'month', 'trimestral': 'quarter', 'anual': 'year'}
     if tipo_reporte not in interval_map and tipo_reporte not in ['quincenal', 'semestral']:
         raise HTTPException(status_code=400, detail=f'Tipo de reporte desconocido: {tipo_reporte}')
+    local_ts = models.Pago.fecha_registro.op('AT TIME ZONE')('America/Caracas')
     if tipo_reporte == 'quincenal':
-        periodo_expr = func.date_trunc('month', models.Pago.fecha_registro) + func.floor((func.extract('day', models.Pago.fecha_registro) - 1) / 15) * text("interval '15 days'")
+        periodo_expr = func.date_trunc('month', local_ts) + func.floor((func.extract('day', local_ts) - 1) / 15) * text("interval '15 days'")
     elif tipo_reporte == 'semestral':
-        periodo_expr = func.date_trunc('year', models.Pago.fecha_registro) + func.floor((func.extract('month', models.Pago.fecha_registro) - 1) / 6) * text("interval '6 months'")
+        periodo_expr = func.date_trunc('year', local_ts) + func.floor((func.extract('month', local_ts) - 1) / 6) * text("interval '6 months'")
     else:
-        periodo_expr = func.date_trunc(interval_map[tipo_reporte], models.Pago.fecha_registro)
-    query = db.query(periodo_expr.label('periodo'), func.sum(models.Pago.monto).label('total_bs'), func.sum(models.Pago.monto_usd).label('total_usd'), func.count(models.Pago.id).label('conteo'), func.min(models.Pago.fecha_registro).label('desde'), func.max(models.Pago.fecha_registro).label('hasta'))
+        periodo_expr = func.date_trunc(interval_map[tipo_reporte], local_ts)
+    query = db.query(periodo_expr.label('periodo'), func.sum(models.Pago.monto).label('total_bs'), func.coalesce(func.sum(models.Pago.monto_usd), 0).label('total_usd'), func.count(models.Pago.id).label('conteo'), func.min(models.Pago.fecha_registro).label('desde'), func.max(models.Pago.fecha_registro).label('hasta'))
     if fecha_inicio:
         query = query.filter(models.Pago.fecha_registro >= fecha_inicio)
     if fecha_fin:
