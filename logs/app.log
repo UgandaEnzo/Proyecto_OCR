@@ -271,3 +271,5 @@ connection to server at "aws-1-us-east-2.pooler.supabase.com" (13.58.13.125), po
 2026-07-02 15:28:28,523 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
 2026-07-02 15:33:28,816 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
 2026-07-02 15:33:28,816 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-03 08:40:54,126 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-03 08:40:54,127 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
