@@ -252,6 +252,7 @@ async def registrar_pago_confirmado(
     """
     filepath = None
     try:
+        logger.info('registrar-pago-confirmado: banco="%s" ref="%s" monto=%s file=%s', banco, referencia, monto, file.filename if file else 'NONE')
         # Validación de cliente
         if cliente_id == '':
             cliente_id = None
