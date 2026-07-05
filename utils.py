@@ -436,9 +436,7 @@ def _comprimir_imagen_para_groq(image_bytes: bytes, max_side: int=720, quality: 
         logger.debug('No se pudo comprimir la imagen para Groq, se usa el original: %s', e)
         return image_bytes
 
-VISION_MODEL = "llama-3.2-11b-vision-preview"
-# Si este modelo se depreca, cambiar a: "qwen/qwen3.6-27b"
-# y anteponer "/no_think" en los prompts para desactivar el modo thinking
+VISION_MODEL = "qwen/qwen3.6-27b"
 
 async def _detectar_banco_con_groq(image_bytes: bytes) -> dict:
     api_key = os.getenv('GROQ_API_KEY', '').strip()
@@ -449,7 +447,7 @@ async def _detectar_banco_con_groq(image_bytes: bytes) -> dict:
         client = AsyncGroq(api_key=api_key)
         image_bytes_for_groq = _comprimir_imagen_para_groq(image_bytes)
         image_b64 = base64.b64encode(image_bytes_for_groq).decode('utf-8')
-        prompt_text = 'Eres un experto en reconocer bancos venezolanos a partir de comprobantes de pago. Devuelve un JSON válido con los campos banco_predicho y sudeban_code. Si no puedes identificar el banco, usa Desconocido. Responde únicamente con JSON válido, sin texto adicional.'
+        prompt_text = '/no_think Eres un experto en reconocer bancos venezolanos a partir de comprobantes de pago. Devuelve un JSON válido con los campos banco_predicho y sudeban_code. Si no puedes identificar el banco, usa Desconocido. Responde únicamente con JSON válido, sin texto adicional.'
         response = await client.chat.completions.create(messages=[{'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': f"data:image/jpeg;base64,{image_b64}"}}, {'type': 'text', 'text': prompt_text}]}], model=VISION_MODEL, temperature=0.0, max_tokens=300)
         content = ''
         if getattr(response, 'choices', None):
@@ -493,7 +491,7 @@ async def _extraer_datos_vision(image_bytes: bytes) -> dict | None:
         client = AsyncGroq(api_key=api_key)
         compressed = _comprimir_imagen_para_groq(image_bytes)
         image_b64 = base64.b64encode(compressed).decode('utf-8')
-        prompt_text = """Eres un extractor de datos de comprobantes de pago venezolanos. Analiza la imagen y devuelve SOLO un JSON valido con estos campos: "monto" (numero float), "referencia" (string de digitos), "banco" (nombre del banco), "cedula" (string si aparece), "sudeban_code" (4 digitos si aparece). Si un campo no esta visible, usa null. Responde UNICAMENTE con el JSON."""
+        prompt_text = """/no_think Eres un extractor de datos de comprobantes de pago venezolanos. Analiza la imagen y devuelve SOLO un JSON valido con estos campos: "monto" (numero float), "referencia" (string de digitos), "banco" (nombre del banco), "cedula" (string si aparece), "sudeban_code" (4 digitos si aparece). Si un campo no esta visible, usa null. Responde UNICAMENTE con el JSON."""
         response = await client.chat.completions.create(
             messages=[{"role": "user", "content": [{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}, {"type": "text", "text": prompt_text}]}],
             model=VISION_MODEL, temperature=0.0, max_tokens=500

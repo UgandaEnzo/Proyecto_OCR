@@ -266,14 +266,23 @@ async def registrar_pago_confirmado(
         referencia = referencia.strip()
         if monto <= 0:
             raise HTTPException(status_code=400, detail='El monto debe ser mayor a cero.')
-            
-        if banco not in bank_rules.get_available_banks():
-            try:
-                estrategia = bank_rules.get_bank_strategy(banco)
-                if estrategia and estrategia.name and (estrategia.name != 'Desconocido'):
-                    banco = estrategia.name
-            except Exception:
-                pass
+
+        available = bank_rules.get_available_banks()
+        if banco not in available:
+            match = next((b for b in available if b.lower() == banco.lower()), None)
+            if match:
+                banco = match
+            else:
+                try:
+                    estrategia = bank_rules.get_bank_strategy(banco)
+                    if estrategia and estrategia.name and (estrategia.name != 'Desconocido'):
+                        banco = estrategia.name
+                    elif estrategia and estrategia.name:
+                        raise HTTPException(status_code=400, detail=f'Banco no reconocido: "{banco}". Los bancos disponibles son: {", ".join(available)}')
+                except HTTPException:
+                    raise
+                except Exception:
+                    raise HTTPException(status_code=400, detail=f'Banco no reconocido: "{banco}". Los bancos disponibles son: {", ".join(available)}')
 
         # Validar duplicados lógicos ANTES de guardar imagen
         pago_existente = db.query(models.Pago).filter(
@@ -385,13 +394,18 @@ async def crear_pago_manual(dato: schemas.PagoManual, db: Session=Depends(get_db
         if pago_existente:
             raise HTTPException(status_code=409, detail='Error: Ya existe un pago con la misma referencia, banco y monto.')
         banco_normalizado = dato.banco.strip()
-        if banco_normalizado not in bank_rules.get_available_banks():
-            try:
-                estrategia = bank_rules.get_bank_strategy(banco_normalizado)
-                if estrategia and estrategia.name and (estrategia.name != 'Desconocido'):
-                    banco_normalizado = estrategia.name
-            except Exception:
-                pass
+        available = bank_rules.get_available_banks()
+        if banco_normalizado not in available:
+            match = next((b for b in available if b.lower() == banco_normalizado.lower()), None)
+            if match:
+                banco_normalizado = match
+            else:
+                try:
+                    estrategia = bank_rules.get_bank_strategy(banco_normalizado)
+                    if estrategia and estrategia.name and (estrategia.name != 'Desconocido'):
+                        banco_normalizado = estrategia.name
+                except Exception:
+                    pass
         tasa_info = await get_tasa_bcv(db)
         tasa_actual = float(tasa_info['tasa'])
         monto_usd_calc = round(dato.monto / tasa_actual, 2) if tasa_actual > 0 else 0.0
