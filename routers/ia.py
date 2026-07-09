@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, text
 from datetime import datetime, timedelta
 import os
+import asyncio
 import tempfile
 import base64
 import models
@@ -103,8 +104,10 @@ async def detectar_banco_vision(data: schemas.VisionBankDetectionRequest, auth: 
     try:
         with open(temp_path, 'wb') as buffer:
             buffer.write(image_data)
-        resultado = await ocr_engine.procesar_imagen(temp_path) or {}
-        groq_info = await _detectar_banco_con_groq(image_data)
+        ocr_task = asyncio.create_task(ocr_engine.procesar_imagen(temp_path))
+        groq_task = asyncio.create_task(_detectar_banco_con_groq(image_data))
+        resultado, groq_info = await asyncio.gather(ocr_task, groq_task)
+        resultado = resultado or {}
         banco_predicho = groq_info.get('banco_predicho') or resultado.get('banco_predicho') or resultado.get('banco_ia')
         sudeban_code = groq_info.get('sudeban_code') or resultado.get('sudeban_code')
         return {'banco_predicho': banco_predicho, 'banco_ia': resultado.get('banco_ia'), 'sudeban_code': sudeban_code, 'referencia': resultado.get('referencia'), 'monto': resultado.get('monto'), 'cedula': resultado.get('cedula'), 'texto_completo': resultado.get('texto_completo')}

@@ -1,0 +1,846 @@
+{
+  "name": "Automatización de Pagos (Flujo Automático)",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {
+          "download": true
+        }
+      },
+      "id": "22034ee5-9bd9-43da-a07b-82c7bcecb09b",
+      "name": "Recibir Imagen (Telegram)1",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1040,
+        48
+      ],
+      "webhookId": "d664bead-8b2e-48cf-8fa7-80c7660ed38d",
+      "credentials": {
+        "telegramApi": {
+          "id": "CnlPK5Js91sgwilM",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://770c-162-43-188-24.ngrok-free.app/detectar-banco/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "miclave123"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "da8590df-d7af-4c03-98d8-acdca3e80665",
+      "name": "OCR FastAPI1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -816,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Recibir Imagen (Telegram)1').item.json.message.chat.id }}",
+        "text": "=🏦 Banco: {{ $json.banco_predicho || 'No detectado' }}\n📄 Ref: {{ $json.referencia }}\n💵 Monto: {{ $json.monto }} Bs.\n\n¿Deseas registrar este pago?",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "✅ Confirmar",
+                    "additionalFields": {
+                      "callback_data": "confirmar"
+                    }
+                  },
+                  {
+                    "text": "❌ Cancelar",
+                    "additionalFields": {
+                      "callback_data": "cancelar"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "reply_to_message_id": "={{ $('Recibir Imagen (Telegram)1').item.json.message.message_id }}"
+        }
+      },
+      "id": "37104a4f-5a7e-4ef1-830d-5af475f4778f",
+      "name": "Pedir Confirmación1",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [
+        -592,
+        48
+      ],
+      "webhookId": "4f101013-2bed-4ea3-b655-e2424b77a570",
+      "credentials": {
+        "telegramApi": {
+          "id": "CnlPK5Js91sgwilM",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "updates": [
+          "callback_query"
+        ],
+        "additionalFields": {}
+      },
+      "id": "15055dcf-c8fa-4ad9-ab37-67eaf8bb43a0",
+      "name": "Botón Presionado1",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1024,
+        320
+      ],
+      "webhookId": "871a701e-b3bd-48d8-817d-faa672ca2bea",
+      "credentials": {
+        "telegramApi": {
+          "id": "CnlPK5Js91sgwilM",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.callback_query.data }}",
+              "operation": "startsWith",
+              "value2": "confirmar"
+            }
+          ]
+        }
+      },
+      "id": "713f2785-7bc6-4b9e-8622-350ce3aaa6a2",
+      "name": "Es Confirmación?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -816,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $json.callback_query.message.reply_to_message.photo.slice(-1)[0].file_id }}",
+        "additionalFields": {}
+      },
+      "id": "0ccfd23a-5d36-430e-9b1d-47bb9d786b0e",
+      "name": "Descargar Imagen1",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [
+        -592,
+        304
+      ],
+      "webhookId": "6a12351a-15f4-420c-a265-9a4151edae6c",
+      "credentials": {
+        "telegramApi": {
+          "id": "CnlPK5Js91sgwilM",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://770c-162-43-188-24.ngrok-free.app/registrar-pago-confirmado/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "miclave123"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "referencia",
+              "value": "={{ $('Botón Presionado1').item.json.callback_query.message.text.match(/Ref:\\s*([0-9]+)/)[1] }}"
+            },
+            {
+              "name": "monto",
+              "value": "={{ $('Botón Presionado1').item.json.callback_query.message.text.match(/Monto:\\s*([0-9.,]+)/)[1].replace(',', '.') }}"
+            },
+            {
+              "name": "banco",
+              "value": "={{ $('Botón Presionado1').item.json.callback_query.message.text.match(/Banco:\\s*([^\\n]+)/)[1].trim() }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1552c8a9-d503-4f1a-8163-aba61019ca46",
+      "name": "Guardar en BD1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -368,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Botón Presionado1').item.json.callback_query.message.chat.id }}",
+        "text": "✅ ¡Pago registrado exitosamente en el sistema!",
+        "additionalFields": {}
+      },
+      "id": "866eb44d-e589-4f2f-b873-24428cce6179",
+      "name": "Aviso Éxito1",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [
+        -176,
+        304
+      ],
+      "webhookId": "bc2fb288-88a0-41b0-87e9-c3ada2d0448f",
+      "credentials": {
+        "telegramApi": {
+          "id": "CnlPK5Js91sgwilM",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Recibir Imagen (Telegram)').item.json.message.chat.id }}",
+        "text": "=✅ ¡Pago registrado exitosamente!\n\n🏦 Banco: {{ $('OCR FastAPI').item.json.banco_predicho }}\n📝 Referencia: {{ $('OCR FastAPI').item.json.referencia }}\n💰 Monto: {{ $('OCR FastAPI').item.json.monto }} Bs.",
+        "additionalFields": {}
+      },
+      "id": "29eae3ed-f631-4652-9b9b-5b4c96fd9e55",
+      "name": "Aviso Éxito",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [
+        176,
+        880
+      ],
+      "webhookId": "6dba1e42-c286-46c0-80d8-4ee1fe38ab17",
+      "credentials": {
+        "telegramApi": {
+          "id": "CnlPK5Js91sgwilM",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {
+          "download": true
+        }
+      },
+      "id": "1bf0c145-5280-4a17-8690-b776aab2192c",
+      "name": "Recibir Imagen (Telegram)",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1072,
+        784
+      ],
+      "webhookId": "944bfc59-0d77-4059-8e58-c38983a290e9",
+      "credentials": {
+        "telegramApi": {
+          "id": "CnlPK5Js91sgwilM",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://086e-162-43-188-37.ngrok-free.app/detectar-banco/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "miclave123"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c73076c1-7c6b-451c-8245-4bbf7bbebe0f",
+      "name": "OCR FastAPI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -816,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $('Recibir Imagen (Telegram)').item.json.message.photo.slice(-1)[0].file_id }}",
+        "additionalFields": {}
+      },
+      "id": "ec2cd319-d313-4543-bd47-2a1a42f3e75e",
+      "name": "Descargar Imagen",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [
+        -560,
+        784
+      ],
+      "webhookId": "b97403a6-58ab-4e55-a2c6-7d82d31bfb20",
+      "credentials": {
+        "telegramApi": {
+          "id": "CnlPK5Js91sgwilM",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://086e-162-43-188-37.ngrok-free.app/registrar-pago-confirmado/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "miclave123"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "referencia",
+              "value": "={{ $('OCR FastAPI').item.json.referencia }}"
+            },
+            {
+              "name": "monto",
+              "value": "={{ $('OCR FastAPI').item.json.monto }}"
+            },
+            {
+              "name": "banco",
+              "value": "={{ $('OCR FastAPI').item.json.banco_predicho || $('OCR FastAPI').item.json.banco_ia }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "512420b1-5352-4b8d-978e-692ff6de2bc8",
+      "name": "Guardar en BD",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -320,
+        784
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.error != null }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "dc78a8a6-f039-42fb-8b73-ca093c57ad1a",
+      "name": "Hubo Error?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -80,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Recibir Imagen (Telegram)').item.json.message.chat.id }}",
+        "text": "=⚠️ Atención: Hubo un problema al registrar el pago.\n\nEs posible que este pago (Referencia: {{ $('OCR FastAPI').item.json.referencia }}) **ya se encuentre duplicado** en el sistema.",
+        "additionalFields": {}
+      },
+      "id": "c5fc7add-a8ab-4fe1-8a27-1c51092854b4",
+      "name": "Aviso Error (Duplicado)1",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [
+        160,
+        704
+      ],
+      "webhookId": "9e6388ce-d475-40f8-bd5e-9454d20665b2",
+      "credentials": {
+        "telegramApi": {
+          "id": "CnlPK5Js91sgwilM",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.error != null }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "4c99ed2d-17bb-4554-8402-e57c0581e7a9",
+      "name": "Hubo Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1536,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Recibir Imagen (Telegram)2').item.json.message.chat.id }}",
+        "text": "=⚠️ Atención: Hubo un problema al registrar el pago.\n\nEs posible que este pago (Referencia: {{ $('OCR FastAPI2').item.json.referencia }}) **ya se encuentre duplicado** en el sistema.",
+        "additionalFields": {}
+      },
+      "id": "1d9db070-671d-44c0-8eb1-bb38c15bc34d",
+      "name": "Aviso Error (Duplicado)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [
+        1776,
+        256
+      ],
+      "webhookId": "20463301-04fc-4de2-bfc6-b69ea81e965b",
+      "credentials": {
+        "telegramApi": {
+          "id": "CnlPK5Js91sgwilM",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {
+          "download": true
+        }
+      },
+      "id": "b346c075-e8ee-4fe1-87c6-7ed3b44c619b",
+      "name": "Recibir Imagen (Telegram)2",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [
+        528,
+        352
+      ],
+      "webhookId": "46db6583-6cff-4cba-9d4a-b1d0338db849",
+      "credentials": {
+        "telegramApi": {
+          "id": "CnlPK5Js91sgwilM",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://proyecto-ocr-8n3s.onrender.com/detectar-banco/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "miclave123"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d75eaba5-ca07-4eea-ac1d-a98b4d643523",
+      "name": "OCR FastAPI2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        784,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $('Recibir Imagen (Telegram)2').item.json.message.photo.slice(-1)[0].file_id }}",
+        "additionalFields": {}
+      },
+      "id": "eb85224c-8c5c-43e5-8506-1d3025f14ef5",
+      "name": "Descargar Imagen2",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [
+        1040,
+        352
+      ],
+      "webhookId": "1e499765-fb76-45d6-abc3-11d40d9ccfa9",
+      "credentials": {
+        "telegramApi": {
+          "id": "CnlPK5Js91sgwilM",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://proyecto-ocr-8n3s.onrender.com/registrar-pago-confirmado/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "miclave123"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "referencia",
+              "value": "={{ $('OCR FastAPI2').item.json.referencia }}"
+            },
+            {
+              "name": "monto",
+              "value": "={{ $('OCR FastAPI2').item.json.monto }}"
+            },
+            {
+              "name": "banco",
+              "value": "={{ $('OCR FastAPI2').item.json.banco_predicho || $('OCR FastAPI2').item.json.banco_ia }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "28e1b670-d34e-4803-a353-927dc46107e2",
+      "name": "Guardar en BD2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1280,
+        352
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Recibir Imagen (Telegram)2').item.json.message.chat.id }}",
+        "text": "=✅ ¡Pago registrado exitosamente!\n\n🏦 Banco: {{ $('OCR FastAPI2').item.json.banco_predicho }}\n📝 Referencia: {{ $('OCR FastAPI2').item.json.referencia }}\n💰 Monto: {{ $('OCR FastAPI2').item.json.monto }} Bs.",
+        "additionalFields": {}
+      },
+      "id": "7d7f451d-c7fa-430c-8cb9-793adc216495",
+      "name": "Aviso Éxito2",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [
+        1776,
+        448
+      ],
+      "webhookId": "ebe5ee66-503e-4329-85f2-3eb5b9083df0",
+      "credentials": {
+        "telegramApi": {
+          "id": "CnlPK5Js91sgwilM",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Recibir Imagen (Telegram)1": {
+      "main": [
+        [
+          {
+            "node": "OCR FastAPI1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OCR FastAPI1": {
+      "main": [
+        [
+          {
+            "node": "Pedir Confirmación1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Botón Presionado1": {
+      "main": [
+        [
+          {
+            "node": "Es Confirmación?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Es Confirmación?1": {
+      "main": [
+        [
+          {
+            "node": "Descargar Imagen1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar Imagen1": {
+      "main": [
+        [
+          {
+            "node": "Guardar en BD1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar en BD1": {
+      "main": [
+        [
+          {
+            "node": "Aviso Éxito1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pedir Confirmación1": {
+      "main": [
+        []
+      ]
+    },
+    "Recibir Imagen (Telegram)": {
+      "main": [
+        [
+          {
+            "node": "OCR FastAPI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OCR FastAPI": {
+      "main": [
+        [
+          {
+            "node": "Descargar Imagen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar Imagen": {
+      "main": [
+        [
+          {
+            "node": "Guardar en BD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar en BD": {
+      "main": [
+        [
+          {
+            "node": "Hubo Error?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hubo Error?1": {
+      "main": [
+        [
+          {
+            "node": "Aviso Error (Duplicado)1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Aviso Éxito",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hubo Error?": {
+      "main": [
+        [
+          {
+            "node": "Aviso Error (Duplicado)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Aviso Éxito2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recibir Imagen (Telegram)2": {
+      "main": [
+        [
+          {
+            "node": "OCR FastAPI2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OCR FastAPI2": {
+      "main": [
+        [
+          {
+            "node": "Descargar Imagen2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar Imagen2": {
+      "main": [
+        [
+          {
+            "node": "Guardar en BD2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar en BD2": {
+      "main": [
+        [
+          {
+            "node": "Hubo Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "33a3e2ba-6173-4660-a29b-2545889db318",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ebef93f9f4ee2e8b75419cb5846c2df86e01a1caed191d6d766e28ef44fe43f7"
+  },
+  "nodeGroups": [],
+  "id": "Oljlg2KFJgkzhSQ3",
+  "tags": []
+}

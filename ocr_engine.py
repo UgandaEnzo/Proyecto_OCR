@@ -1,6 +1,8 @@
 import os
 import re
 import json
+import asyncio
+import io
 import cv2
 from groq import AsyncGroq
 import numpy as np
@@ -9,7 +11,7 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from ocr_utils import engine
 import bank_rules
-from utils import _comprimir_imagen_para_groq, _extraer_datos_vision
+from utils import _extraer_datos_vision, logger
 
 
 class OcrData(BaseModel):
@@ -119,26 +121,32 @@ def extract_sudeban_code(texto):
     return None
 
 
-def _leer_imagen_cv(image_path):
-    """Lee imagen con OpenCV, con fallback a PIL."""
-    img = cv2.imread(image_path)
-    if img is None:
-        try:
-            pil = Image.open(image_path).convert("RGB")
-            img = cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
-        except Exception as e:
-            print(f"❌ [OCR] Imagen inválida: {e}")
-            return None
-    return img
-
-
 async def procesar_pago_ocr(image_path, aggressive=False):
-    """Flujo Principal: RapidOCR -> Groq texto, con fallback a Groq Vision."""
-    img_cv = _leer_imagen_cv(image_path)
-    if img_cv is None:
+    """Flujo optimizado: RapidOCR con timeout (8s), fallback a Groq Vision."""
+    try:
+        with open(image_path, "rb") as f:
+            img_bytes = f.read()
+    except Exception as e:
+        logger.error("No se pudo leer la imagen: %s", e)
         return {"referencia": "No detectada", "monto": 0.0, "banco_predicho": "Desconocido", "texto_completo": ""}
 
-    texto_completo = extraer_texto(image_path)
+    img_cv = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+    if img_cv is None:
+        try:
+            pil = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+            img_cv = cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
+        except Exception as e:
+            logger.error("Imagen inválida: %s", e)
+            return {"referencia": "No detectada", "monto": 0.0, "banco_predicho": "Desconocido", "texto_completo": ""}
+
+    texto_completo = ""
+    try:
+        texto_completo = await asyncio.wait_for(
+            asyncio.to_thread(extraer_texto, image_path), timeout=8.0
+        )
+    except asyncio.TimeoutError:
+        logger.info("OCR local tardó >8s, usando Vision API")
+
     ai_data = None
     source = "UNKNOWN"
 
@@ -149,15 +157,13 @@ async def procesar_pago_ocr(image_path, aggressive=False):
 
     if not ai_data:
         try:
-            with open(image_path, "rb") as f:
-                img_bytes = f.read()
             vision_data = await _extraer_datos_vision(img_bytes)
             if vision_data:
                 ai_data = vision_data
                 texto_completo = f"Vision: ref={vision_data.get('referencia')} monto={vision_data.get('monto')}"
                 source = "VISION"
         except Exception as e:
-            print(f"⚠️ [VISION] Error en fallback: {e}")
+            logger.error("Vision fallback error: %s", e)
 
     pred_banco_ia = ai_data.get("banco") if isinstance(ai_data, dict) else None
     pred_sudeban = ai_data.get("sudeban_code") if isinstance(ai_data, dict) else None

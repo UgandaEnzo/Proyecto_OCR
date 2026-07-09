@@ -170,17 +170,15 @@ async def subir_pago(file: Optional[UploadFile]=File(None), banco: str=Form(...)
         filename = None
         filename = f'{uuid.uuid4().hex}_{os.path.basename(file.filename)}'
         filepath = str(uploads_dir / filename)
+        sha256_hash = hashlib.sha256()
         written_bytes = 0
         with open(filepath, 'wb') as buffer:
             while (chunk := (await file.read(1024 * 1024))):
                 written_bytes += len(chunk)
                 if written_bytes > max_bytes:
                     raise HTTPException(status_code=413, detail=f'Archivo demasiado grande (máx {max_upload_mb}MB)')
+                sha256_hash.update(chunk)
                 buffer.write(chunk)
-        sha256_hash = hashlib.sha256()
-        with open(filepath, 'rb') as f:
-            for byte_block in iter(lambda: f.read(4096), b''):
-                sha256_hash.update(byte_block)
         file_hash_str = sha256_hash.hexdigest()
         existing_by_hash = db.query(models.Pago).filter(models.Pago.file_hash == file_hash_str).first()
         if existing_by_hash:
@@ -306,19 +304,15 @@ async def registrar_pago_confirmado(
         filename = f'{uuid.uuid4().hex}_{os.path.basename(file.filename)}'
         filepath = str(uploads_dir / filename)
         
+        sha256_hash = hashlib.sha256()
         written_bytes = 0
         with open(filepath, 'wb') as buffer:
             while (chunk := (await file.read(1024 * 1024))):
                 written_bytes += len(chunk)
                 if written_bytes > max_bytes:
                     raise HTTPException(status_code=413, detail=f'Archivo demasiado grande (máx {max_upload_mb}MB)')
+                sha256_hash.update(chunk)
                 buffer.write(chunk)
-                
-        # Hash y deduplicación por archivo
-        sha256_hash = hashlib.sha256()
-        with open(filepath, 'rb') as f:
-            for byte_block in iter(lambda: f.read(4096), b''):
-                sha256_hash.update(byte_block)
         file_hash_str = sha256_hash.hexdigest()
         
         existing_by_hash = db.query(models.Pago).filter(models.Pago.file_hash == file_hash_str).first()
