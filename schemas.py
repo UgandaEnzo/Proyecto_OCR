@@ -165,5 +165,7 @@ class ChatQuery(BaseModel):
 
 class ReporteConfigSchema(BaseModel):
     nombre_empresa: str = ""
+    rif: str = ""
+    contacto: str = ""
     color_primario: str = "#1e3a8a"
     color_secundario: str = "#dbeafe"

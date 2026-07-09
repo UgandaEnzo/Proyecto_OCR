@@ -141,6 +141,8 @@ def actualizar_modo_ocr(data: schemas.GestionOcrMode, db: Session=Depends(get_db
 def obtener_config_reporte(db: Session = Depends(get_db)):
     return {
         'nombre_empresa': get_config_value(db, 'REPORTE_EMPRESA_NOMBRE', ''),
+        'rif': get_config_value(db, 'REPORTE_RIF', ''),
+        'contacto': get_config_value(db, 'REPORTE_CONTACTO', ''),
         'color_primario': get_config_value(db, 'REPORTE_COLOR_PRIMARY', '#1e3a8a'),
         'color_secundario': get_config_value(db, 'REPORTE_COLOR_SECONDARY', '#dbeafe'),
     }
@@ -148,6 +150,8 @@ def obtener_config_reporte(db: Session = Depends(get_db)):
 @router.post('/gestion/reporte/config')
 def guardar_config_reporte(data: schemas.ReporteConfigSchema, db: Session = Depends(get_db)):
     set_config_value(db, 'REPORTE_EMPRESA_NOMBRE', data.nombre_empresa.strip())
+    set_config_value(db, 'REPORTE_RIF', data.rif.strip())
+    set_config_value(db, 'REPORTE_CONTACTO', data.contacto.strip())
     set_config_value(db, 'REPORTE_COLOR_PRIMARY', data.color_primario.strip())
     set_config_value(db, 'REPORTE_COLOR_SECONDARY', data.color_secundario.strip())
     return {'mensaje': 'Configuración de reportes guardada.'}

@@ -364,6 +364,14 @@
                         <input type="text" class="form-control" v-model="disenoNombreEmpresa" placeholder="Mi Empresa C.A.">
                     </div>
                     <div class="mb-3">
+                        <label class="form-label">RIF (opcional)</label>
+                        <input type="text" class="form-control" v-model="disenoRif" placeholder="J-12345678-9">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Contacto (opcional)</label>
+                        <input type="text" class="form-control" v-model="disenoContacto" placeholder="Teléfono / Email">
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label">Color Primario (encabezados)</label>
                         <input type="color" class="form-control form-control-color" v-model="disenoColorPrimario" style="height: 38px; padding: 4px;">
                     </div>
@@ -716,6 +724,6 @@
 </div>
 
 <script src="/static/vue.global.prod.js"></script>
-<script src="/static/app.js?v=3"></script>
+<script src="/static/app.js?v=4"></script>
 </body>
 </html>

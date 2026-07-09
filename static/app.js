@@ -79,6 +79,8 @@ createApp({
             gestionOcrMode: 'local',
             gestionOcrSaving: false,
             disenoNombreEmpresa: '',
+            disenoRif: '',
+            disenoContacto: '',
             disenoColorPrimario: '#1e3a8a',
             disenoColorSecundario: '#dbeafe',
             disenoLogoUrl: '',
@@ -1082,6 +1084,8 @@ createApp({
                 if (cfg.ok) {
                     const data = await cfg.json();
                     this.disenoNombreEmpresa = data.nombre_empresa || '';
+                    this.disenoRif = data.rif || '';
+                    this.disenoContacto = data.contacto || '';
                     this.disenoColorPrimario = data.color_primario || '#1e3a8a';
                     this.disenoColorSecundario = data.color_secundario || '#dbeafe';
                 }
@@ -1101,6 +1105,8 @@ createApp({
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         nombre_empresa: this.disenoNombreEmpresa.trim(),
+                        rif: this.disenoRif.trim(),
+                        contacto: this.disenoContacto.trim(),
                         color_primario: this.disenoColorPrimario,
                         color_secundario: this.disenoColorSecundario,
                     }),

@@ -222,10 +222,11 @@ def _agrupar_totales_sudeban(pagos_detalle: List[models.Pago]) -> List[dict]:
         grupos[clave]['conteo'] += 1
     return [{'sudeban_code': codigo, 'banco_label': etiqueta, 'total_bs': valores['total_bs'], 'total_usd': valores['total_usd'], 'conteo': valores['conteo']} for (codigo, etiqueta), valores in sorted(grupos.items(), key=lambda item: item[0])]
 
-def _crear_excel_reporte(resultados: List[dict], pagos_detalle: List[models.Pago], tipo_reporte: str, start_date: Optional[datetime], end_date: Optional[datetime], empresa_nombre: str = '', color_primario: str = '#1e3a8a', color_secundario: str = '#dbeafe', logo_bytes: Optional[bytes] = None) -> bytes:
+def _crear_excel_reporte(resultados: List[dict], pagos_detalle: List[models.Pago], tipo_reporte: str, start_date: Optional[datetime], end_date: Optional[datetime], empresa_nombre: str = '', color_primario: str = '#1e3a8a', color_secundario: str = '#dbeafe', logo_bytes: Optional[bytes] = None, rif: str = '', contacto: str = '') -> bytes:
     from openpyxl import Workbook
     from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
     from openpyxl.drawing.image import Image as XlImage
+    from PIL import Image as PILImage
     wb = Workbook()
     ws = wb.active
     ws.title = 'Reporte'
@@ -245,28 +246,39 @@ def _crear_excel_reporte(resultados: List[dict], pagos_detalle: List[models.Pago
     wrap_align = Alignment(wrap_text=True, vertical='top')
 
     # --- Encabezado con logo y empresa ---
+    fila = 1
     if logo_bytes:
         try:
+            pil_img = PILImage.open(io.BytesIO(logo_bytes))
+            ow, oh = pil_img.size
+            ratio = min(120/ow, 60/oh)
             xl_img = XlImage(io.BytesIO(logo_bytes))
-            xl_img.width = 120
-            xl_img.height = 60
-            ws.add_image(xl_img, 'A1')
-            ws.append([])
-            ws.append([])
-            ws.append([])
+            xl_img.width = int(ow * ratio)
+            xl_img.height = int(oh * ratio)
+            ws.add_image(xl_img, f'A{fila}')
+            fila += 3
         except Exception:
             pass
     titulo = empresa_nombre + ' - ' if empresa_nombre else ''
-    ws.append([f'{titulo}Reporte de Conciliación Bancaria', tipo_reporte.title()])
-    ws['A1'].font = title_font
-    ws['B1'].font = title_font
-    ws.append(['Generado', datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
-    ws['A2'].font = normal_font
-    ws['B2'].font = normal_font
-    ws.append(['Periodo', start_date.strftime('%Y-%m-%d') if start_date else 'Completo', end_date.strftime('%Y-%m-%d') if end_date else 'Completo'])
-    ws['A3'].font = normal_font
-    ws['B3'].font = normal_font
-    ws.append([])
+    ws.cell(row=fila, column=1, value=f'{titulo}Reporte de Conciliación Bancaria').font = title_font
+    ws.cell(row=fila, column=2, value=tipo_reporte.title()).font = title_font
+    fila += 1
+    ws.cell(row=fila, column=1, value='Generado').font = normal_font
+    ws.cell(row=fila, column=2, value=datetime.now().strftime('%Y-%m-%d %H:%M:%S')).font = normal_font
+    fila += 1
+    ws.cell(row=fila, column=1, value='Periodo').font = normal_font
+    ws.cell(row=fila, column=2, value=start_date.strftime('%Y-%m-%d') if start_date else 'Completo').font = normal_font
+    ws.cell(row=fila, column=3, value=end_date.strftime('%Y-%m-%d') if end_date else 'Completo').font = normal_font
+    fila += 1
+    if rif:
+        ws.cell(row=fila, column=1, value='RIF').font = normal_font
+        ws.cell(row=fila, column=2, value=rif).font = normal_font
+        fila += 1
+    if contacto:
+        ws.cell(row=fila, column=1, value='Contacto').font = normal_font
+        ws.cell(row=fila, column=2, value=contacto).font = normal_font
+        fila += 1
+    fila += 1
 
     # --- Resumen Agregado ---
     row_actual = ws.max_row + 1
@@ -349,37 +361,48 @@ def _crear_excel_reporte(resultados: List[dict], pagos_detalle: List[models.Pago
     buffer.seek(0)
     return buffer.getvalue()
 
-def _crear_pdf_reporte(resultados: List[dict], pagos_detalle: List[models.Pago], tipo_reporte: str, start_date: Optional[datetime], end_date: Optional[datetime], empresa_nombre: str = '', color_primario: str = '#1e3a8a', color_secundario: str = '#dbeafe', logo_bytes: Optional[bytes] = None) -> bytes:
+def _crear_pdf_reporte(resultados: List[dict], pagos_detalle: List[models.Pago], tipo_reporte: str, start_date: Optional[datetime], end_date: Optional[datetime], empresa_nombre: str = '', color_primario: str = '#1e3a8a', color_secundario: str = '#dbeafe', logo_bytes: Optional[bytes] = None, rif: str = '', contacto: str = '') -> bytes:
     from reportlab.lib.pagesizes import letter
     from reportlab.lib import colors
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
     from reportlab.lib.units import inch
+    from PIL import Image as PILImage
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     styles = getSampleStyleSheet()
     title_style = styles['Title']
     normal_style = styles['Normal']
     section_style = ParagraphStyle('SectionHeading', parent=styles['Heading2'], spaceAfter=10, spaceBefore=15)
+    meta_style = ParagraphStyle('MetaData', parent=normal_style, fontSize=9, leading=12)
     prim_hex = colors.HexColor(color_primario)
     story = []
     if logo_bytes:
         try:
-            rl_img = RLImage(io.BytesIO(logo_bytes), width=1.5*inch, height=0.75*inch)
+            pil_img = PILImage.open(io.BytesIO(logo_bytes))
+            ow, oh = pil_img.size
+            max_w = 1.5 * inch
+            max_h = 0.75 * inch
+            ratio = min(max_w/ow, max_h/oh)
+            rl_img = RLImage(io.BytesIO(logo_bytes), width=ow*ratio, height=oh*ratio)
             story.append(rl_img)
             story.append(Spacer(1, 6))
         except Exception:
             pass
     titulo = empresa_nombre + ' - ' if empresa_nombre else ''
     story.append(Paragraph(f'{titulo}Reporte de Conciliación Bancaria - {tipo_reporte.title()}', title_style))
-    story.append(Paragraph(f"Generado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", normal_style))
+    story.append(Paragraph(f"Generado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", meta_style))
     range_parts = []
     if start_date:
         range_parts.append(f"Desde: {start_date.strftime('%Y-%m-%d')}")
     if end_date:
         range_parts.append(f"Hasta: {end_date.strftime('%Y-%m-%d')}")
     filtro_texto = ' - '.join(range_parts) if range_parts else 'Rango: completo'
-    story.append(Paragraph(filtro_texto, normal_style))
+    story.append(Paragraph(filtro_texto, meta_style))
+    if rif:
+        story.append(Paragraph(f'RIF: {rif}', meta_style))
+    if contacto:
+        story.append(Paragraph(f'Contacto: {contacto}', meta_style))
     story.append(Spacer(1, 15))
     story.append(Paragraph('Resumen Agregado', section_style))
     periodo_style = ParagraphStyle('PeriodoCell', parent=normal_style, fontName='Helvetica', fontSize=8, leading=10, wordWrap='CJK')
