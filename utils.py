@@ -245,7 +245,7 @@ def _crear_excel_reporte(resultados: List[dict], pagos_detalle: List[models.Pago
     center_align = Alignment(horizontal='center', vertical='center')
     wrap_align = Alignment(wrap_text=True, vertical='top')
 
-    # --- Encabezado con logo y empresa ---
+    # --- Membrete centrado (independiente de las tablas) ---
     fila = 1
     if logo_bytes:
         try:
@@ -255,28 +255,43 @@ def _crear_excel_reporte(resultados: List[dict], pagos_detalle: List[models.Pago
             xl_img = XlImage(io.BytesIO(logo_bytes))
             xl_img.width = int(ow * ratio)
             xl_img.height = int(oh * ratio)
-            ws.add_image(xl_img, f'A{fila}')
+            ws.add_image(xl_img, f'C{fila}')
             fila += 3
         except Exception:
             pass
     titulo = empresa_nombre + ' - ' if empresa_nombre else ''
-    ws.cell(row=fila, column=1, value=f'{titulo}Reporte de Conciliación Bancaria').font = title_font
-    ws.cell(row=fila, column=2, value=tipo_reporte.title()).font = title_font
+    ws.merge_cells(start_row=fila, start_column=1, end_row=fila, end_column=6)
+    celda = ws.cell(row=fila, column=1, value=f'{titulo}Reporte de Conciliación Bancaria')
+    celda.font = title_font
+    celda.alignment = center_align
     fila += 1
-    ws.cell(row=fila, column=1, value='Generado').font = normal_font
-    ws.cell(row=fila, column=2, value=datetime.now().strftime('%Y-%m-%d %H:%M:%S')).font = normal_font
+    ws.merge_cells(start_row=fila, start_column=1, end_row=fila, end_column=6)
+    celda = ws.cell(row=fila, column=1, value=f'Generado: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}  |  Tipo: {tipo_reporte.title()}')
+    celda.font = normal_font
+    celda.alignment = center_align
     fila += 1
-    ws.cell(row=fila, column=1, value='Periodo').font = normal_font
-    ws.cell(row=fila, column=2, value=start_date.strftime('%Y-%m-%d') if start_date else 'Completo').font = normal_font
-    ws.cell(row=fila, column=3, value=end_date.strftime('%Y-%m-%d') if end_date else 'Completo').font = normal_font
-    fila += 1
+    texto_periodo = ''
+    if start_date:
+        texto_periodo += f'Desde: {start_date.strftime("%Y-%m-%d")}'
+    if end_date:
+        texto_periodo += f'  Hasta: {end_date.strftime("%Y-%m-%d")}' if texto_periodo else f'Hasta: {end_date.strftime("%Y-%m-%d")}'
+    if texto_periodo:
+        ws.merge_cells(start_row=fila, start_column=1, end_row=fila, end_column=6)
+        celda = ws.cell(row=fila, column=1, value=texto_periodo)
+        celda.font = normal_font
+        celda.alignment = center_align
+        fila += 1
     if rif:
-        ws.cell(row=fila, column=1, value='RIF').font = normal_font
-        ws.cell(row=fila, column=2, value=rif).font = normal_font
+        ws.merge_cells(start_row=fila, start_column=1, end_row=fila, end_column=6)
+        celda = ws.cell(row=fila, column=1, value=f'RIF: {rif}')
+        celda.font = normal_font
+        celda.alignment = center_align
         fila += 1
     if contacto:
-        ws.cell(row=fila, column=1, value='Contacto').font = normal_font
-        ws.cell(row=fila, column=2, value=contacto).font = normal_font
+        ws.merge_cells(start_row=fila, start_column=1, end_row=fila, end_column=6)
+        celda = ws.cell(row=fila, column=1, value=f'Contacto: {contacto}')
+        celda.font = normal_font
+        celda.alignment = center_align
         fila += 1
     fila += 1
 
@@ -484,31 +499,38 @@ def _comprimir_imagen_para_groq(image_bytes: bytes, max_side: int=600, quality: 
 
 VISION_MODEL = "qwen/qwen3.6-27b"
 
+_VISION_FALLBACK_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+
 async def _detectar_banco_con_groq(image_bytes: bytes) -> dict:
     api_key = os.getenv('GROQ_API_KEY', '').strip()
     if not api_key:
         return {}
-    try:
-        from groq import AsyncGroq
-        client = AsyncGroq(api_key=api_key)
-        image_bytes_for_groq = _comprimir_imagen_para_groq(image_bytes)
-        image_b64 = base64.b64encode(image_bytes_for_groq).decode('utf-8')
-        prompt_text = '/no_think Extrae banco_predicho y sudeban_code de este comprobante. JSON solido.'
-        response = await client.chat.completions.create(messages=[{'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': f"data:image/jpeg;base64,{image_b64}"}}, {'type': 'text', 'text': prompt_text}]}], model=VISION_MODEL, temperature=0.0, max_tokens=4096)
-        content = ''
-        if getattr(response, 'choices', None):
-            choice = response.choices[0]
-            message = getattr(choice, 'message', None)
-            if isinstance(message, dict):
-                content = message.get('content', '')
-            elif hasattr(message, 'content'):
-                content = message.content or ''
-            else:
-                content = str(message or '')
-        return _parse_groq_bank_response(content)
-    except Exception as e:
-        logger.warning('Groq Vision fallo: %s', e)
-        return {}
+    models_to_try = [VISION_MODEL, _VISION_FALLBACK_MODEL]
+    from groq import AsyncGroq
+    client = AsyncGroq(api_key=api_key)
+    image_bytes_for_groq = _comprimir_imagen_para_groq(image_bytes)
+    image_b64 = base64.b64encode(image_bytes_for_groq).decode('utf-8')
+    prompt_text = '/no_think Extrae banco_predicho y sudeban_code de este comprobante. JSON solido.'
+    last_error = ''
+    for model in models_to_try:
+        try:
+            response = await client.chat.completions.create(messages=[{'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': f"data:image/jpeg;base64,{image_b64}"}}, {'type': 'text', 'text': prompt_text}]}], model=model, temperature=0.0, max_tokens=4096)
+            content = ''
+            if getattr(response, 'choices', None):
+                choice = response.choices[0]
+                message = getattr(choice, 'message', None)
+                if isinstance(message, dict):
+                    content = message.get('content', '')
+                elif hasattr(message, 'content'):
+                    content = message.content or ''
+                else:
+                    content = str(message or '')
+            return _parse_groq_bank_response(content)
+        except Exception as e:
+            last_error = str(e)
+            logger.warning('Groq Vision con %s fallo: %s', model, e)
+    logger.warning('Groq Vision: todos los modelos fallaron. %s', last_error)
+    return {}
 
 def _parse_json_response(content: str) -> dict | None:
     """Extrae y parsea el primer JSON object de un texto."""
@@ -532,31 +554,36 @@ async def _extraer_datos_vision(image_bytes: bytes) -> dict | None:
     api_key = os.getenv('GROQ_API_KEY', '').strip()
     if not api_key:
         return None
-    try:
-        from groq import AsyncGroq
-        client = AsyncGroq(api_key=api_key)
-        compressed = _comprimir_imagen_para_groq(image_bytes)
-        image_b64 = base64.b64encode(compressed).decode('utf-8')
-        prompt_text = """/no_think Extrae monto (float), referencia (digitos), banco (nombre), cedula (string), sudeban_code (4 digitos) de este comprobante. JSON solido. null si no visible."""
-        response = await client.chat.completions.create(
-            messages=[{"role": "user", "content": [{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}, {"type": "text", "text": prompt_text}]}],
-            model=VISION_MODEL, temperature=0.0, max_tokens=4096
-        )
-        content = ''
-        if getattr(response, 'choices', None):
-            msg = response.choices[0].message
-            if isinstance(msg, dict):
-                content = msg.get('content', '')
-            elif hasattr(msg, 'content'):
-                content = msg.content or ''
+    models_to_try = [VISION_MODEL, _VISION_FALLBACK_MODEL]
+    from groq import AsyncGroq
+    client = AsyncGroq(api_key=api_key)
+    compressed = _comprimir_imagen_para_groq(image_bytes)
+    image_b64 = base64.b64encode(compressed).decode('utf-8')
+    prompt_text = """/no_think Extrae monto (float), referencia (digitos), banco (nombre), cedula (string), sudeban_code (4 digitos) de este comprobante. JSON solido. null si no visible."""
+    last_error = ''
+    for model in models_to_try:
+        try:
+            response = await client.chat.completions.create(
+                messages=[{"role": "user", "content": [{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}, {"type": "text", "text": prompt_text}]}],
+                model=model, temperature=0.0, max_tokens=4096
+            )
+            content = ''
+            if getattr(response, 'choices', None):
+                msg = response.choices[0].message
+                if isinstance(msg, dict):
+                    content = msg.get('content', '')
+                elif hasattr(msg, 'content'):
+                    content = msg.content or ''
+                else:
+                    content = str(msg or '')
+            result = _parse_json_response(content)
+            if result:
+                logger.info('Vision extrajo: ref=%s monto=%s banco=%s', result.get('referencia'), result.get('monto'), result.get('banco'))
             else:
-                content = str(msg or '')
-        result = _parse_json_response(content)
-        if result:
-            logger.info('Vision extrajo: ref=%s monto=%s banco=%s', result.get('referencia'), result.get('monto'), result.get('banco'))
-        else:
-            logger.warning('Vision no pudo extraer JSON de: %s', content[:200])
-        return result
-    except Exception as e:
-        logger.warning('Groq Vision extracción falló: %s', e)
+                logger.warning('Vision no pudo extraer JSON de: %s', content[:200])
+            return result
+        except Exception as e:
+            last_error = str(e)
+            logger.warning('Groq Vision extracción con %s falló: %s', model, e)
+    logger.warning('Groq Vision extracción: todos los modelos fallaron. %s', last_error)
     return None

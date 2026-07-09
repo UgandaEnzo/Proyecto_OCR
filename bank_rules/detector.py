@@ -79,10 +79,10 @@ def get_bank_strategy(texto_ocr, imagen=None):
     if "bdt" in texto_limpio:
         return GenericStrategy("BDT")
 
-    if "exterior" in texto_limpio or "0412" in texto_limpio:
+    if "0412" in texto_limpio or "banco exterior" in texto_limpio:
         return GenericStrategy("Banco Exterior")
 
-    if "tesoro" in texto_limpio or "0172" in texto_limpio:
+    if "0172" in texto_limpio or "banco del tesoro" in texto_limpio:
         return GenericStrategy("Banco del Tesoro")
 
     if "provincial" in texto_limpio or "1002" in texto_limpio:
@@ -100,10 +100,10 @@ def get_bank_strategy(texto_ocr, imagen=None):
     if "venezolano de crédito" in texto_limpio or "bvc" in texto_limpio:
         return GenericStrategy("Banco Venezolano de Crédito")
 
-    if "banco plaza" in texto_limpio or ("plaza" in texto_limpio and "provincial" not in texto_limpio and "bbva" not in texto_limpio):
+    if "banco plaza" in texto_limpio or "0171" in texto_limpio:
         return GenericStrategy("Banco Plaza")
 
-    if "banco activo" in texto_limpio or "activo" in texto_limpio:
+    if "banco activo" in texto_limpio or "0173" in texto_limpio:
         return GenericStrategy("Banco Activo")
 
     if "fondo comun" in texto_limpio or "fondo común" in texto_limpio:
@@ -118,7 +118,7 @@ def get_bank_strategy(texto_ocr, imagen=None):
     if "banco agrícola" in texto_limpio or "bav" in texto_limpio:
         return GenericStrategy("Banco Agrícola de Venezuela")
 
-    if "banco del caribe" in texto_limpio or "caribe" in texto_limpio:
+    if "banco del caribe" in texto_limpio or "banco caribe" in texto_limpio:
         return GenericStrategy("Banco del Caribe")
 
     if "bandes" in texto_limpio or "desarrollo económico" in texto_limpio:
@@ -141,103 +141,5 @@ def get_bank_strategy(texto_ocr, imagen=None):
                 return VenezuelaStrategy()
         except Exception:
             pass
-
-    # --- 3. Selección basada en puntaje ---
-    scores = {
-        "Mercantil": 0,
-        "DELSUR": 0,
-        "Banesco": 0,
-        "BDT": 0,
-        "Banco Exterior": 0,
-        "Banco del Tesoro": 0,
-        "Provincial": 0,
-        "BOD": 0,
-        "Banco Bicentenario": 0,
-        "Banco de la Fuerza Armada Nacional Bolivariana (BFA)": 0,
-        "Banco Venezolano de Crédito": 0,
-        "Banco Plaza": 0,
-        "Banco Activo": 0,
-        "Banco Fondo Común": 0,
-        "Banco Caroní": 0,
-        "Banco Sofitasa": 0,
-        "Banco Agrícola de Venezuela": 0,
-        "Banco del Caribe": 0,
-        "BANDEs": 0,
-        "Banco del Pueblo Soberano": 0
-    }
-
-    if "número de referencia:" in texto_limpio or "número de referencia" in texto_limpio:
-        scores["DELSUR"] += 2
-    if "0157" in texto_limpio:
-        scores["DELSUR"] += 3
-
-    if "tpago" in texto_limpio:
-        scores["Mercantil"] += 2
-    if "734" in texto_limpio:
-        scores["Mercantil"] += 3
-
-    if "0134" in texto_limpio:
-        scores["Banesco"] += 3
-    if "banesco" in texto_limpio:
-        scores["Banesco"] += 2
-
-    if "bdt" in texto_limpio:
-        scores["BDT"] += 3
-
-    if "0412" in texto_limpio or "exterior" in texto_limpio:
-        scores["Banco Exterior"] += 3
-
-    if "0172" in texto_limpio or "tesoro" in texto_limpio:
-        scores["Banco del Tesoro"] += 3
-
-    if "provincial" in texto_limpio or "1002" in texto_limpio:
-        scores["Provincial"] += 3
-
-    if "bod" in texto_limpio or "0114" in texto_limpio or "banco occidental de descuento" in texto_limpio:
-        scores["BOD"] += 3
-
-    if "bicentenario" in texto_limpio or "0404" in texto_limpio:
-        scores["Banco Bicentenario"] += 3
-
-    if "bfa" in texto_limpio or "fuerza armada" in texto_limpio or "bolivariana" in texto_limpio:
-        scores["Banco de la Fuerza Armada Nacional Bolivariana (BFA)"] += 3
-
-    if "bvc" in texto_limpio or "venezolano de crédito" in texto_limpio:
-        scores["Banco Venezolano de Crédito"] += 3
-
-    if "banco plaza" in texto_limpio or ("plaza" in texto_limpio and "provincial" not in texto_limpio and "bbva" not in texto_limpio):
-        scores["Banco Plaza"] += 3
-
-    if "banco activo" in texto_limpio or "activo" in texto_limpio:
-        scores["Banco Activo"] += 3
-
-    if "fondo comun" in texto_limpio or "fondo común" in texto_limpio:
-        scores["Banco Fondo Común"] += 3
-
-    if "caroní" in texto_limpio or "caroni" in texto_limpio:
-        scores["Banco Caroní"] += 3
-
-    if "sofitasa" in texto_limpio:
-        scores["Banco Sofitasa"] += 3
-
-    if "banco agrícola" in texto_limpio or "bav" in texto_limpio:
-        scores["Banco Agrícola de Venezuela"] += 3
-
-    if "banco del caribe" in texto_limpio or "caribe" in texto_limpio:
-        scores["Banco del Caribe"] += 3
-
-    if "bandes" in texto_limpio or "desarrollo económico" in texto_limpio:
-        scores["BANDEs"] += 3
-
-    if "banco del pueblo soberano" in texto_limpio or "bps" in texto_limpio:
-        scores["Banco del Pueblo Soberano"] += 3
-
-    best_bank = max(scores, key=scores.get)
-    if scores[best_bank] >= 2:
-        if best_bank == "Mercantil":
-            return MercantilStrategy()
-        if best_bank == "DELSUR":
-            return DelsurStrategy()
-        return GenericStrategy(best_bank)
 
     return GenericStrategy("Desconocido")
