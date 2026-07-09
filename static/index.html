@@ -270,6 +270,7 @@
                     <button class="gestion-tab" :class="{ active: gestionTab === 'ia' }" @click="gestionTab = 'ia'">IA / API</button>
                     <button class="gestion-tab" :class="{ active: gestionTab === 'db' }" @click="gestionTab = 'db'">Pagos</button>
                     <button class="gestion-tab" :class="{ active: gestionTab === 'clientes' }" @click="gestionTab = 'clientes'">Clientes</button>
+                    <button class="gestion-tab" :class="{ active: gestionTab === 'diseno' }" @click="gestionTab = 'diseno'">Diseño</button>
                 </div>
 
                 <div v-if="gestionTab === 'ia'" class="gestion-panel">
@@ -354,6 +355,34 @@
                             </table>
                         </div>
                     </div>
+                </div>
+
+                <div v-if="gestionTab === 'diseno'" class="gestion-panel">
+                    <h6 class="mb-3">Diseño de Reportes</h6>
+                    <div class="mb-3">
+                        <label class="form-label">Nombre de la Empresa</label>
+                        <input type="text" class="form-control" v-model="disenoNombreEmpresa" placeholder="Mi Empresa C.A.">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Color Primario (encabezados)</label>
+                        <input type="color" class="form-control form-control-color" v-model="disenoColorPrimario" style="height: 38px; padding: 4px;">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Color Secundario (detalles)</label>
+                        <input type="color" class="form-control form-control-color" v-model="disenoColorSecundario" style="height: 38px; padding: 4px;">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Logo de la Empresa</label>
+                        <input type="file" class="form-control" @change="subirLogoReporte" accept="image/*">
+                        <div v-if="disenoLogoUrl" class="mt-2">
+                            <img :src="disenoLogoUrl" alt="Logo" style="max-height: 80px; border: 1px solid #444; border-radius: 4px; padding: 4px;">
+                            <button class="btn btn-sm btn-outline-danger ms-2" @click="eliminarLogoReporte">×</button>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" @click="guardarDisenoReporte" :disabled="disenoSaving">
+                        <span v-if="disenoSaving" class="spinner"></span>
+                        {{ disenoSaving ? ' Guardando...' : 'Guardar Configuración' }}
+                    </button>
                 </div>
             </div>
             <div class="modal-footer">

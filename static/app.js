@@ -78,6 +78,11 @@ createApp({
             gestionUltimosClientes: [],
             gestionOcrMode: 'local',
             gestionOcrSaving: false,
+            disenoNombreEmpresa: '',
+            disenoColorPrimario: '#1e3a8a',
+            disenoColorSecundario: '#dbeafe',
+            disenoLogoUrl: '',
+            disenoSaving: false,
         };
     },
     computed: {
@@ -779,6 +784,7 @@ createApp({
             await this.cargarCredenciales();
             await this.cargarGestionClientesSummary();
             await this.cargarModoOcr();
+            await this.cargarDisenoReporte();
         },
         async abrirConfigApi() {
             this.appApiKey = localStorage.getItem('apiKeyConciliacion') || '';
@@ -1066,7 +1072,74 @@ createApp({
             } catch (err) {
                 this.showToast('Error al cargar bancos', 'danger');
             }
-        }
+        },
+        async cargarDisenoReporte() {
+            try {
+                const [cfg, logo] = await Promise.all([
+                    fetch('/gestion/reporte/config'),
+                    fetch('/gestion/reporte/logo')
+                ]);
+                if (cfg.ok) {
+                    const data = await cfg.json();
+                    this.disenoNombreEmpresa = data.nombre_empresa || '';
+                    this.disenoColorPrimario = data.color_primario || '#1e3a8a';
+                    this.disenoColorSecundario = data.color_secundario || '#dbeafe';
+                }
+                if (logo.ok) {
+                    const data = await logo.json();
+                    this.disenoLogoUrl = data.logo_url || '';
+                }
+            } catch (err) {
+                this.showToast('No se pudo cargar configuración de reportes', 'warning');
+            }
+        },
+        async guardarDisenoReporte() {
+            this.disenoSaving = true;
+            try {
+                const resp = await fetch('/gestion/reporte/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        nombre_empresa: this.disenoNombreEmpresa.trim(),
+                        color_primario: this.disenoColorPrimario,
+                        color_secundario: this.disenoColorSecundario,
+                    }),
+                });
+                if (resp.ok) {
+                    this.showToast('Configuración de reportes guardada', 'success');
+                } else {
+                    this.showToast('Error al guardar configuración', 'danger');
+                }
+            } catch (err) {
+                this.showToast('Error al guardar configuración', 'danger');
+            } finally {
+                this.disenoSaving = false;
+            }
+        },
+        async subirLogoReporte(event) {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+                const resp = await fetch('/gestion/reporte/logo', {
+                    method: 'POST',
+                    body: formData,
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    this.disenoLogoUrl = data.logo_url || '';
+                    this.showToast('Logo subido correctamente', 'success');
+                } else {
+                    this.showToast('Error al subir logo', 'danger');
+                }
+            } catch (err) {
+                this.showToast('Error al subir logo', 'danger');
+            }
+        },
+        async eliminarLogoReporte() {
+            this.disenoLogoUrl = '';
+        },
     },
     mounted() {
         this.cargar(1);

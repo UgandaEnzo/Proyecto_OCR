@@ -222,14 +222,15 @@ def _agrupar_totales_sudeban(pagos_detalle: List[models.Pago]) -> List[dict]:
         grupos[clave]['conteo'] += 1
     return [{'sudeban_code': codigo, 'banco_label': etiqueta, 'total_bs': valores['total_bs'], 'total_usd': valores['total_usd'], 'conteo': valores['conteo']} for (codigo, etiqueta), valores in sorted(grupos.items(), key=lambda item: item[0])]
 
-def _crear_excel_reporte(resultados: List[dict], pagos_detalle: List[models.Pago], tipo_reporte: str, start_date: Optional[datetime], end_date: Optional[datetime]) -> bytes:
+def _crear_excel_reporte(resultados: List[dict], pagos_detalle: List[models.Pago], tipo_reporte: str, start_date: Optional[datetime], end_date: Optional[datetime], empresa_nombre: str = '', color_primario: str = '#1e3a8a', color_secundario: str = '#dbeafe', logo_bytes: Optional[bytes] = None) -> bytes:
     from openpyxl import Workbook
     from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+    from openpyxl.drawing.image import Image as XlImage
     wb = Workbook()
     ws = wb.active
     ws.title = 'Reporte'
-    header_fill = PatternFill(start_color='1e3a8a', end_color='1e3a8a', fill_type='solid')
-    sub_header_fill = PatternFill(start_color='dbeafe', end_color='dbeafe', fill_type='solid')
+    header_fill = PatternFill(start_color=color_primario.lstrip('#'), end_color=color_primario.lstrip('#'), fill_type='solid')
+    sub_header_fill = PatternFill(start_color=color_secundario.lstrip('#'), end_color=color_secundario.lstrip('#'), fill_type='solid')
     header_font = Font(color='FFFFFF', bold=True, size=11)
     title_font = Font(bold=True, size=13)
     section_font = Font(bold=True, size=11)
@@ -243,8 +244,20 @@ def _crear_excel_reporte(resultados: List[dict], pagos_detalle: List[models.Pago
     center_align = Alignment(horizontal='center', vertical='center')
     wrap_align = Alignment(wrap_text=True, vertical='top')
 
-    # --- Metadata ---
-    ws.append(['Reporte de Conciliación Bancaria', tipo_reporte.title()])
+    # --- Encabezado con logo y empresa ---
+    if logo_bytes:
+        try:
+            xl_img = XlImage(io.BytesIO(logo_bytes))
+            xl_img.width = 120
+            xl_img.height = 60
+            ws.add_image(xl_img, 'A1')
+            ws.append([])
+            ws.append([])
+            ws.append([])
+        except Exception:
+            pass
+    titulo = empresa_nombre + ' - ' if empresa_nombre else ''
+    ws.append([f'{titulo}Reporte de Conciliación Bancaria', tipo_reporte.title()])
     ws['A1'].font = title_font
     ws['B1'].font = title_font
     ws.append(['Generado', datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
@@ -336,19 +349,29 @@ def _crear_excel_reporte(resultados: List[dict], pagos_detalle: List[models.Pago
     buffer.seek(0)
     return buffer.getvalue()
 
-def _crear_pdf_reporte(resultados: List[dict], pagos_detalle: List[models.Pago], tipo_reporte: str, start_date: Optional[datetime], end_date: Optional[datetime]) -> bytes:
+def _crear_pdf_reporte(resultados: List[dict], pagos_detalle: List[models.Pago], tipo_reporte: str, start_date: Optional[datetime], end_date: Optional[datetime], empresa_nombre: str = '', color_primario: str = '#1e3a8a', color_secundario: str = '#dbeafe', logo_bytes: Optional[bytes] = None) -> bytes:
     from reportlab.lib.pagesizes import letter
     from reportlab.lib import colors
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
+    from reportlab.lib.units import inch
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     styles = getSampleStyleSheet()
     title_style = styles['Title']
     normal_style = styles['Normal']
     section_style = ParagraphStyle('SectionHeading', parent=styles['Heading2'], spaceAfter=10, spaceBefore=15)
+    prim_hex = colors.HexColor(color_primario)
     story = []
-    story.append(Paragraph(f'Reporte de Conciliación Bancaria - {tipo_reporte.title()}', title_style))
+    if logo_bytes:
+        try:
+            rl_img = RLImage(io.BytesIO(logo_bytes), width=1.5*inch, height=0.75*inch)
+            story.append(rl_img)
+            story.append(Spacer(1, 6))
+        except Exception:
+            pass
+    titulo = empresa_nombre + ' - ' if empresa_nombre else ''
+    story.append(Paragraph(f'{titulo}Reporte de Conciliación Bancaria - {tipo_reporte.title()}', title_style))
     story.append(Paragraph(f"Generado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", normal_style))
     range_parts = []
     if start_date:
@@ -366,7 +389,7 @@ def _crear_pdf_reporte(resultados: List[dict], pagos_detalle: List[models.Pago],
     totales = _agregar_total_reporte(resultados)
     data.append(['Totales', '', '', f"{totales['total_bs']:.2f}", f"{totales['total_usd']:.2f}", str(totales['total_pagos'])])
     table = Table(data, colWidths=[120, 65, 65, 75, 75, 50])
-    style = [('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a8a')), ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke), ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'), ('ALIGN', (3, 1), (4, -1), 'RIGHT'), ('ALIGN', (5, 1), (5, -1), 'RIGHT'), ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1'))]
+    style = [('BACKGROUND', (0, 0), (-1, 0), prim_hex), ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke), ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'), ('ALIGN', (3, 1), (4, -1), 'RIGHT'), ('ALIGN', (5, 1), (5, -1), 'RIGHT'), ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1'))]
     for row_idx in range(1, len(data)):
         if row_idx % 2 == 1:
             style.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor('#f3f4f6')))
@@ -380,7 +403,7 @@ def _crear_pdf_reporte(resultados: List[dict], pagos_detalle: List[models.Pago],
     if len(data_det) == 1:
         data_det.append(['Sin movimientos', '-', '-', '-', '-', '-'])
     table_det = Table(data_det, colWidths=[90, 130, 85, 75, 60, 75])
-    style_det = [('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a8a')), ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke), ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'), ('ALIGN', (3, 1), (5, -1), 'RIGHT'), ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1'))]
+    style_det = [('BACKGROUND', (0, 0), (-1, 0), prim_hex), ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke), ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'), ('ALIGN', (3, 1), (5, -1), 'RIGHT'), ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1'))]
     for row_idx in range(1, len(data_det)):
         if row_idx % 2 == 1:
             style_det.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor('#f3f4f6')))
@@ -421,7 +444,7 @@ def _parse_groq_bank_response(texto: str) -> dict:
         parsed['banco_predicho'] = texto.splitlines()[0].strip()
     return parsed
 
-def _comprimir_imagen_para_groq(image_bytes: bytes, max_side: int=720, quality: int=60) -> bytes:
+def _comprimir_imagen_para_groq(image_bytes: bytes, max_side: int=600, quality: int=50) -> bytes:
     try:
         with Image.open(io.BytesIO(image_bytes)) as img:
             img = img.convert('RGB')

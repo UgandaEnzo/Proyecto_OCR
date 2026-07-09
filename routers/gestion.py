@@ -11,7 +11,7 @@ import models
 import schemas
 from database import get_db
 from config import get_config_value, set_config_value
-from utils import _get_sqlite_db_path, _get_database_type
+from utils import _get_sqlite_db_path, _get_database_type, uploads_dir
 
 router = APIRouter(tags=['gestion'])
 
@@ -136,4 +136,42 @@ def actualizar_modo_ocr(data: schemas.GestionOcrMode, db: Session=Depends(get_db
     set_config_value(db, 'MOTOR_OCR_ACTIVO', modo_raw)
     os.environ['MOTOR_OCR_ACTIVO'] = modo_raw
     return {'mensaje': f'Modo OCR cambiado a {modo} correctamente.', 'modo': modo}
+
+@router.get('/gestion/reporte/config')
+def obtener_config_reporte(db: Session = Depends(get_db)):
+    return {
+        'nombre_empresa': get_config_value(db, 'REPORTE_EMPRESA_NOMBRE', ''),
+        'color_primario': get_config_value(db, 'REPORTE_COLOR_PRIMARY', '#1e3a8a'),
+        'color_secundario': get_config_value(db, 'REPORTE_COLOR_SECONDARY', '#dbeafe'),
+    }
+
+@router.post('/gestion/reporte/config')
+def guardar_config_reporte(data: schemas.ReporteConfigSchema, db: Session = Depends(get_db)):
+    set_config_value(db, 'REPORTE_EMPRESA_NOMBRE', data.nombre_empresa.strip())
+    set_config_value(db, 'REPORTE_COLOR_PRIMARY', data.color_primario.strip())
+    set_config_value(db, 'REPORTE_COLOR_SECONDARY', data.color_secundario.strip())
+    return {'mensaje': 'Configuración de reportes guardada.'}
+
+@router.post('/gestion/reporte/logo')
+async def subir_logo_reporte(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    if not file.content_type or not file.content_type.startswith('image/'):
+        raise HTTPException(status_code=400, detail='Solo se permiten archivos de imagen.')
+    logos_dir = uploads_dir / 'logos'
+    logos_dir.mkdir(parents=True, exist_ok=True)
+    for old in logos_dir.iterdir():
+        old.unlink()
+    ext = os.path.splitext(file.filename)[1] or '.png'
+    logo_path = str(logos_dir / f'logo_reporte{ext}')
+    with open(logo_path, 'wb') as f:
+        while chunk := (await file.read(1024 * 1024)):
+            f.write(chunk)
+    set_config_value(db, 'REPORTE_LOGO_PATH', logo_path)
+    return {'mensaje': 'Logo subido correctamente.', 'logo_url': f'/uploads/logos/{os.path.basename(logo_path)}'}
+
+@router.get('/gestion/reporte/logo')
+def obtener_logo_reporte(db: Session = Depends(get_db)):
+    path = get_config_value(db, 'REPORTE_LOGO_PATH', '')
+    if path and os.path.exists(path):
+        return {'logo_url': f'/uploads/logos/{os.path.basename(path)}'}
+    return {'logo_url': None}
 

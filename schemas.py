@@ -162,3 +162,8 @@ class TasaBCVUpdate(BaseModel):
 
 class ChatQuery(BaseModel):
     pregunta: str
+
+class ReporteConfigSchema(BaseModel):
+    nombre_empresa: str = ""
+    color_primario: str = "#1e3a8a"
+    color_secundario: str = "#dbeafe"
