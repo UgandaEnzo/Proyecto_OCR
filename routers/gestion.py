@@ -30,9 +30,9 @@ def exportar_pagos_csv(db: Session=Depends(get_db)):
     pagos = db.query(models.Pago).order_by(models.Pago.id).all()
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['id', 'referencia', 'banco', 'banco_destino', 'monto', 'monto_usd', 'tasa_momento', 'tasa_cambio', 'fecha_registro', 'estado', 'cliente_id', 'cliente_nombre', 'ruta_imagen'])
+    writer.writerow(['id', 'referencia', 'banco', 'banco_destino', 'monto', 'monto_usd', 'tasa_momento', 'tasa_cambio', 'fecha_registro', 'estado', 'cliente_id', 'cliente_nombre', 'cliente_cedula', 'ruta_imagen'])
     for pago in pagos:
-        writer.writerow([pago.id, pago.referencia, pago.banco, pago.banco_destino or '', pago.monto, pago.monto_usd, pago.tasa_momento, pago.tasa_cambio, pago.fecha_registro.isoformat() if pago.fecha_registro else '', pago.estado, pago.cliente_id, pago.cliente.nombre if pago.cliente else '', pago.ruta_imagen or ''])
+        writer.writerow([pago.id, pago.referencia, pago.banco, pago.banco_destino or '', pago.monto, pago.monto_usd, pago.tasa_momento, pago.tasa_cambio, pago.fecha_registro.isoformat() if pago.fecha_registro else '', pago.estado, pago.cliente_id, pago.cliente.nombre if pago.cliente else '', pago.cliente.cedula if pago.cliente else '', pago.ruta_imagen or ''])
     return Response(output.getvalue(), media_type='text/csv', headers={'Content-Disposition': 'attachment; filename=pagos_export.csv'})
 
 @router.post('/gestion/db/import-pagos')
@@ -73,7 +73,7 @@ def importar_pagos_csv(file: UploadFile=File(...), db: Session=Depends(get_db)):
         fecha_registro = None
         fecha_texto = (fila.get('fecha_registro') or fila.get('fecha') or fila.get('Fecha') or '').strip()
         if fecha_texto:
-            for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
+            for fmt in ('%Y-%m-%dT%H:%M:%S%z', '%Y-%m-%d %H:%M:%S%z', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
                 try:
                     fecha_registro = datetime.strptime(fecha_texto, fmt)
                     break

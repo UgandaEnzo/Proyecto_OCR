@@ -499,37 +499,30 @@ def _comprimir_imagen_para_groq(image_bytes: bytes, max_side: int=600, quality: 
 
 VISION_MODEL = "qwen/qwen3.6-27b"
 
-_VISION_FALLBACK_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
-
 async def _detectar_banco_con_groq(image_bytes: bytes) -> dict:
     api_key = os.getenv('GROQ_API_KEY', '').strip()
     if not api_key:
         return {}
-    models_to_try = [VISION_MODEL, _VISION_FALLBACK_MODEL]
     from groq import AsyncGroq
     client = AsyncGroq(api_key=api_key)
     image_bytes_for_groq = _comprimir_imagen_para_groq(image_bytes)
     image_b64 = base64.b64encode(image_bytes_for_groq).decode('utf-8')
     prompt_text = '/no_think Extrae banco_predicho y sudeban_code de este comprobante. JSON solido.'
-    last_error = ''
-    for model in models_to_try:
-        try:
-            response = await client.chat.completions.create(messages=[{'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': f"data:image/jpeg;base64,{image_b64}"}}, {'type': 'text', 'text': prompt_text}]}], model=model, temperature=0.0, max_tokens=4096)
-            content = ''
-            if getattr(response, 'choices', None):
-                choice = response.choices[0]
-                message = getattr(choice, 'message', None)
-                if isinstance(message, dict):
-                    content = message.get('content', '')
-                elif hasattr(message, 'content'):
-                    content = message.content or ''
-                else:
-                    content = str(message or '')
-            return _parse_groq_bank_response(content)
-        except Exception as e:
-            last_error = str(e)
-            logger.warning('Groq Vision con %s fallo: %s', model, e)
-    logger.warning('Groq Vision: todos los modelos fallaron. %s', last_error)
+    try:
+        response = await client.chat.completions.create(messages=[{'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': f"data:image/jpeg;base64,{image_b64}"}}, {'type': 'text', 'text': prompt_text}]}], model=VISION_MODEL, temperature=0.0, max_tokens=4096)
+        content = ''
+        if getattr(response, 'choices', None):
+            choice = response.choices[0]
+            message = getattr(choice, 'message', None)
+            if isinstance(message, dict):
+                content = message.get('content', '')
+            elif hasattr(message, 'content'):
+                content = message.content or ''
+            else:
+                content = str(message or '')
+        return _parse_groq_bank_response(content)
+    except Exception as e:
+        logger.warning('Groq Vision fallo: %s', e)
     return {}
 
 def _parse_json_response(content: str) -> dict | None:
@@ -554,36 +547,31 @@ async def _extraer_datos_vision(image_bytes: bytes) -> dict | None:
     api_key = os.getenv('GROQ_API_KEY', '').strip()
     if not api_key:
         return None
-    models_to_try = [VISION_MODEL, _VISION_FALLBACK_MODEL]
     from groq import AsyncGroq
     client = AsyncGroq(api_key=api_key)
     compressed = _comprimir_imagen_para_groq(image_bytes)
     image_b64 = base64.b64encode(compressed).decode('utf-8')
     prompt_text = """/no_think Extrae monto (float), referencia (digitos), banco (nombre), cedula (string), sudeban_code (4 digitos) de este comprobante. JSON solido. null si no visible."""
-    last_error = ''
-    for model in models_to_try:
-        try:
-            response = await client.chat.completions.create(
-                messages=[{"role": "user", "content": [{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}, {"type": "text", "text": prompt_text}]}],
-                model=model, temperature=0.0, max_tokens=4096
-            )
-            content = ''
-            if getattr(response, 'choices', None):
-                msg = response.choices[0].message
-                if isinstance(msg, dict):
-                    content = msg.get('content', '')
-                elif hasattr(msg, 'content'):
-                    content = msg.content or ''
-                else:
-                    content = str(msg or '')
-            result = _parse_json_response(content)
-            if result:
-                logger.info('Vision extrajo: ref=%s monto=%s banco=%s', result.get('referencia'), result.get('monto'), result.get('banco'))
+    try:
+        response = await client.chat.completions.create(
+            messages=[{"role": "user", "content": [{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}, {"type": "text", "text": prompt_text}]}],
+            model=VISION_MODEL, temperature=0.0, max_tokens=4096
+        )
+        content = ''
+        if getattr(response, 'choices', None):
+            msg = response.choices[0].message
+            if isinstance(msg, dict):
+                content = msg.get('content', '')
+            elif hasattr(msg, 'content'):
+                content = msg.content or ''
             else:
-                logger.warning('Vision no pudo extraer JSON de: %s', content[:200])
-            return result
-        except Exception as e:
-            last_error = str(e)
-            logger.warning('Groq Vision extracción con %s falló: %s', model, e)
-    logger.warning('Groq Vision extracción: todos los modelos fallaron. %s', last_error)
+                content = str(msg or '')
+        result = _parse_json_response(content)
+        if result:
+            logger.info('Vision extrajo: ref=%s monto=%s banco=%s', result.get('referencia'), result.get('monto'), result.get('banco'))
+        else:
+            logger.warning('Vision no pudo extraer JSON de: %s', content[:200])
+        return result
+    except Exception as e:
+        logger.warning('Groq Vision extracción falló: %s', e)
     return None

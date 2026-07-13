@@ -1,8 +1,16 @@
 import os
 import sys
+import webbrowser
+import threading
 import uvicorn
 from pathlib import Path
 from dotenv import load_dotenv
+
+def _abrir_navegador(url, delay=2.5):
+    """Abre el navegador después de un delay para dar tiempo al servidor a iniciar."""
+    timer = threading.Timer(delay, lambda: webbrowser.open(url))
+    timer.daemon = True
+    timer.start()
 
 if __name__ == "__main__":
     # Asegúrate de que el directorio actual esté en el PATH para que Python encuentre los módulos.
@@ -33,6 +41,7 @@ if __name__ == "__main__":
     for current_port in tried_ports:
         try:
             print(f"Iniciando servidor en {host}:{current_port}")
+            _abrir_navegador(f"http://localhost:{current_port}/static/index.html")
             uvicorn.run(app, host=host, port=current_port)
             break
         except OSError as exc:

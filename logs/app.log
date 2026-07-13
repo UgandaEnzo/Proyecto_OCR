@@ -273,3 +273,42 @@ connection to server at "aws-1-us-east-2.pooler.supabase.com" (13.58.13.125), po
 2026-07-02 15:33:28,816 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
 2026-07-03 08:40:54,126 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
 2026-07-03 08:40:54,127 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-09 17:07:53,480 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-09 17:07:53,481 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-09 17:12:54,870 ERROR ocr_api - ❌ Error crítico al inicializar la base de datos: (psycopg2.OperationalError) could not translate host name "aws-1-us-east-2.pooler.supabase.com" to address: Name or service not known
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-07-09 17:13:05,075 CRITICAL ocr_api - Error de conexión con la base de datos: (psycopg2.OperationalError) could not translate host name "aws-1-us-east-2.pooler.supabase.com" to address: Name or service not known
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-07-09 17:13:05,777 CRITICAL ocr_api - Error de conexión con la base de datos: (psycopg2.OperationalError) could not translate host name "aws-1-us-east-2.pooler.supabase.com" to address: Name or service not known
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-07-09 17:13:05,777 CRITICAL ocr_api - Error de conexión con la base de datos: (psycopg2.OperationalError) could not translate host name "aws-1-us-east-2.pooler.supabase.com" to address: Name or service not known
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-07-09 17:13:06,562 CRITICAL ocr_api - Error de conexión con la base de datos: (psycopg2.OperationalError) could not translate host name "aws-1-us-east-2.pooler.supabase.com" to address: Name or service not known
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-07-09 17:13:24,690 CRITICAL ocr_api - Error de conexión con la base de datos: (psycopg2.OperationalError) could not translate host name "aws-1-us-east-2.pooler.supabase.com" to address: Name or service not known
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-07-09 17:13:29,863 CRITICAL ocr_api - Error de conexión con la base de datos: (psycopg2.OperationalError) could not translate host name "aws-1-us-east-2.pooler.supabase.com" to address: Name or service not known
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-07-09 17:36:12,814 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-09 17:36:12,815 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-09 17:37:21,011 WARNING ocr_api - No se pudo verificar Groq API: Connection error.
+2026-07-09 17:37:38,215 WARNING ocr_api - Groq Vision con qwen/qwen3.6-27b fallo: Connection error.
+2026-07-09 17:37:39,457 WARNING ocr_api - Groq Vision con meta-llama/llama-4-scout-17b-16e-instruct fallo: Connection error.
+2026-07-09 17:37:39,457 WARNING ocr_api - Groq Vision: todos los modelos fallaron. Connection error.
+2026-07-09 17:37:42,229 WARNING ocr_api - Groq Vision extracción con qwen/qwen3.6-27b falló: Connection error.
+2026-07-09 17:37:43,734 WARNING ocr_api - Groq Vision extracción con meta-llama/llama-4-scout-17b-16e-instruct falló: Connection error.
+2026-07-09 17:37:43,734 WARNING ocr_api - Groq Vision extracción: todos los modelos fallaron. Connection error.
+2026-07-09 17:37:54,936 WARNING ocr_api - Groq Vision extracción con qwen/qwen3.6-27b falló: Connection error.
+2026-07-09 17:37:56,373 WARNING ocr_api - Groq Vision extracción con meta-llama/llama-4-scout-17b-16e-instruct falló: Connection error.
+2026-07-09 17:37:56,373 WARNING ocr_api - Groq Vision extracción: todos los modelos fallaron. Connection error.
+2026-07-13 13:50:41,856 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-13 13:50:41,857 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-13 13:51:06,462 WARNING ocr_api - No se pudo verificar Groq API: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
+2026-07-13 13:52:49,755 WARNING ocr_api - No se pudo verificar Groq API: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
