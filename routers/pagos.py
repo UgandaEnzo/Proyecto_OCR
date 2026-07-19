@@ -201,7 +201,8 @@ async def subir_pago(file: Optional[UploadFile]=File(None), banco: str=Form(...)
         tasa_info = await get_tasa_bcv(db)
         tasa_actual = float(tasa_info['tasa'])
         monto_usd_calc = round(monto_ocr / tasa_actual, 2) if tasa_actual > 0 else 0.0
-        nuevo_pago = models.Pago(referencia=ref_ocr, banco=banco, banco_destino=banco_destino, monto=monto_ocr, ruta_imagen=filepath, file_hash=file_hash_str, cliente_id=cliente_id, tasa_momento=tasa_actual, tasa_cambio=tasa_actual, monto_usd=monto_usd_calc)
+        source = resultado.get('source', 'RULES_LEGACY')
+        nuevo_pago = models.Pago(referencia=ref_ocr, banco=banco, banco_destino=banco_destino, monto=monto_ocr, ruta_imagen=filepath, file_hash=file_hash_str, cliente_id=cliente_id, tasa_momento=tasa_actual, tasa_cambio=tasa_actual, monto_usd=monto_usd_calc, motor=source)
         try:
             db.add(nuevo_pago)
             db.commit()
@@ -339,7 +340,8 @@ async def registrar_pago_confirmado(
             cliente_id=cliente_id,
             tasa_momento=tasa_actual,
             tasa_cambio=tasa_actual,
-            monto_usd=monto_usd_calc
+            monto_usd=monto_usd_calc,
+            motor='CONFIRMED_BOT'
         )
         
         try:
@@ -404,7 +406,7 @@ async def crear_pago_manual(dato: schemas.PagoManual, db: Session=Depends(get_db
         tasa_info = await get_tasa_bcv(db)
         tasa_actual = float(tasa_info['tasa'])
         monto_usd_calc = round(dato.monto / tasa_actual, 2) if tasa_actual > 0 else 0.0
-        nuevo_pago = models.Pago(referencia=dato.referencia, banco=banco_normalizado, monto=dato.monto, ruta_imagen='', file_hash=None, cliente_id=dato.cliente_id, tasa_momento=tasa_actual, tasa_cambio=tasa_actual, monto_usd=monto_usd_calc)
+        nuevo_pago = models.Pago(referencia=dato.referencia, banco=banco_normalizado, monto=dato.monto, ruta_imagen='', file_hash=None, cliente_id=dato.cliente_id, tasa_momento=tasa_actual, tasa_cambio=tasa_actual, monto_usd=monto_usd_calc, motor='MANUAL')
         db.add(nuevo_pago)
         db.commit()
         db.refresh(nuevo_pago)
@@ -464,8 +466,9 @@ async def reprocesar_pago(pago_id: int, db: Session=Depends(get_db)):
         pago.referencia = ref_nueva
         pago.banco_destino = banco_dest_nuevo
         pago.monto = monto_nuevo
+        pago.motor = resultado.get('source', pago.motor)
         db.commit()
-        detalles_audit = f'Re-escaneo IA. Ref: {ref_nueva}, Banco: {pago.banco}, Monto: {monto_nuevo}'
+        detalles_audit = f'Re-escaneo IA. Ref: {ref_nueva}, Banco: {pago.banco}, Monto: {monto_nuevo}, Motor: {pago.motor}'
         registrar_auditoria(db, pago_id=pago.id, accion='reprocess', detalles=detalles_audit)
         return {'mensaje': 'Pago reprocesado con éxito', 'nuevos_datos': resultado}
     except Exception as e:

@@ -32,6 +32,7 @@ class Pago(Base):
     estado = Column(String, default="no_verificado", server_default="no_verificado", index=True)
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True)
     # Relación bidireccional: desde un pago se accede al cliente
+    motor = Column(String, nullable=True, comment='Motor usado: LOCAL_FALLBACK, AI_OPENROUTER, VISION_OPENROUTER, CONFIRMED_BOT, MANUAL')
     cliente = relationship("Cliente", back_populates="pagos")
 
 

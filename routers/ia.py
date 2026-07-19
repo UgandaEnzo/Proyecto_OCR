@@ -12,7 +12,8 @@ import schemas
 import ocr_engine
 from database import get_db
 from config import get_config_value, set_config_value
-from utils import require_api_key, _verificar_estado_groq, _detectar_banco_con_groq
+from utils import require_api_key, _verificar_estado_ia, _detectar_banco_con_vision, set_env_value
+from ai_client import openrouter
 
 router = APIRouter(tags=['ia'])
 
@@ -43,30 +44,34 @@ async def consultar_datos_ia(query: schemas.ChatQuery, db: Session=Depends(get_d
     balance_total_bs = db.query(func.sum(models.Pago.monto)).scalar() or 0.0
     prompt = f'\n    Eres un asistente contable experto del Sistema de Conciliación.\n    TABLAS Y ESQUEMA DISPONIBLES EN LA BASE DE DATOS:\n    - clientes(id, nombre, cedula, telefono)\n    - pagos(id, referencia, banco, banco_destino, monto, monto_usd, tasa_momento, tasa_cambio, fecha_registro, ruta_imagen, file_hash, estado, cliente_id)\n    - pagos_history(id, pago_id, accion, detalles, usuario, fecha)\n    - tasas_cambio(id, proveedor, monto_tasa, fecha_actualizacion)\n    RELACIONES:\n    - pago.cliente_id -> cliente.id\n    - un pago puede no tener cliente asociado\n\n    CONTEXTO AGREGADO:\n    - Clientes totales: {total_clientes}\n    - Pagos totales: {total_pagos}\n    - Registros de auditoría: {total_historial}\n    - Pagos por estado:\n{contexto_por_estado}\n    - Total recaudado este mes: {recaudado_mes:,.2f} Bs.\n    - Total recaudado último 30 días: {recaudado_30_dias:,.2f} Bs.\n    - Total recaudado últimos 60 días: {recaudado_60_dias:,.2f} Bs.\n    - Total recaudado en USD (sumatoria de monto_usd): {total_usd_recaudado:,.2f} USD.\n    - Tasa promedio de los últimos pagos: {tasa_promedio_pagos:.4f}.\n    - Balance total en Bs: {balance_total_bs:,.2f} Bs.\n    - Última tasa BCV registrada: {tasa_bcv_texto}\n    - Mejor cliente (frecuencia): {nombre_mejor}\n\n    ÚLTIMOS 5 PAGOS REGISTRADOS:\n    {contexto_pagos}\n\n    ÚLTIMAS 5 ACCIONES DE HISTORIAL:\n    {contexto_historial}\n\n    INSTRUCCIONES:\n    - Responde ÚNICAMENTE con los datos proporcionados arriba. No inventes cifras, clientes ni pagos.\n    - Si la pregunta se puede responder con los datos disponibles (totales, conteos, listados, tasas), responde directa y profesionalmente.\n    - Si la pregunta requiere datos que no están en el contexto (ej: un cliente específico no listado, un pago no mencionado), indica amablemente que no tienes ese dato específico pero ofrece la información relacionada que sí tengas.\n    - Ejemplo: si preguntan por "Banesco" y no hay desglose por banco en los datos, indica que no tienes el desglose por banco pero puedes informar los totales generales.\n    - Responde en español, claro y conciso.\n\n    PREGUNTA DEL USUARIO:\n    {query.pregunta}\n    '
     try:
-        from groq import AsyncGroq
-        client = AsyncGroq(api_key=os.getenv('GROQ_API_KEY'))
-        response = await client.chat.completions.create(messages=[{'role': 'user', 'content': prompt}], model=os.getenv('GROQ_MODEL', 'openai/gpt-oss-120b'), temperature=0.2)
-        return {'respuesta': response.choices[0].message.content}
+        respuesta = await openrouter.chat([{'role': 'user', 'content': prompt}], temperature=0.2)
+        if respuesta:
+            return {'respuesta': respuesta}
+        return {'respuesta': 'El asistente no pudo generar una respuesta en este momento.'}
     except Exception:
-        return {'respuesta': 'No fue posible procesar la consulta IA en este momento. Comprueba la configuración de GROQ_API_KEY y vuelve a intentarlo.'}
+        return {'respuesta': 'No fue posible procesar la consulta IA en este momento. Comprueba la clave OpenRouter y vuelve a intentarlo.'}
 
 @router.get('/gestion/ia/status')
-async def estado_groq_api(db: Session=Depends(get_db)):
-    api_key = get_config_value(db, 'GROQ_API_KEY', '')
-    online, message = await _verificar_estado_groq(api_key)
+async def estado_ia_api(db: Session=Depends(get_db)):
+    api_key = get_config_value(db, 'OPENROUTER_API_KEY', '')
+    online, message = await _verificar_estado_ia(api_key)
     state = 'online' if online else 'invalid_key' if not api_key else 'offline'
     return {'state': state, 'api_key': api_key, 'message': message}
 
 @router.post('/gestion/ia/key')
-async def guardar_groq_api_key(data: schemas.GestionApiKey, db: Session=Depends(get_db)):
+async def guardar_ia_api_key(data: schemas.GestionApiKey, db: Session=Depends(get_db)):
     api_key = data.api_key.strip()
     if not api_key:
-        raise HTTPException(status_code=400, detail='La clave de Groq no puede estar vacía.')
-    set_config_value(db, 'GROQ_API_KEY', api_key)
-    os.environ['GROQ_API_KEY'] = api_key
-    online, message = await _verificar_estado_groq(api_key)
+        raise HTTPException(status_code=400, detail='La clave de OpenRouter no puede estar vacia.')
+    set_config_value(db, 'OPENROUTER_API_KEY', api_key)
+    os.environ['OPENROUTER_API_KEY'] = api_key
+    set_env_value('OPENROUTER_API_KEY', api_key)
+    from openai import AsyncOpenAI
+    openrouter.client = AsyncOpenAI(api_key=api_key, base_url=openrouter.BASE_URL)
+    openrouter.api_key = api_key
+    online, message = await _verificar_estado_ia(api_key)
     state = 'online' if online else 'offline'
-    return {'mensaje': 'Clave Groq guardada correctamente.', 'state': state, 'message': message}
+    return {'mensaje': 'Clave OpenRouter guardada correctamente.', 'state': state, 'message': message}
 
 @router.post('/detectar-banco/')
 async def detectar_banco(file: UploadFile=File(...), auth: bool=Depends(require_api_key)):
@@ -105,11 +110,11 @@ async def detectar_banco_vision(data: schemas.VisionBankDetectionRequest, auth: 
         with open(temp_path, 'wb') as buffer:
             buffer.write(image_data)
         ocr_task = asyncio.create_task(ocr_engine.procesar_imagen(temp_path))
-        groq_task = asyncio.create_task(_detectar_banco_con_groq(image_data))
-        resultado, groq_info = await asyncio.gather(ocr_task, groq_task)
+        vision_task = asyncio.create_task(_detectar_banco_con_vision(image_data))
+        resultado, vision_info = await asyncio.gather(ocr_task, vision_task)
         resultado = resultado or {}
-        banco_predicho = groq_info.get('banco_predicho') or resultado.get('banco_predicho') or resultado.get('banco_ia')
-        sudeban_code = groq_info.get('sudeban_code') or resultado.get('sudeban_code')
+        banco_predicho = vision_info.get('banco_predicho') or resultado.get('banco_predicho') or resultado.get('banco_ia')
+        sudeban_code = vision_info.get('sudeban_code') or resultado.get('sudeban_code')
         return {'banco_predicho': banco_predicho, 'banco_ia': resultado.get('banco_ia'), 'sudeban_code': sudeban_code, 'referencia': resultado.get('referencia'), 'monto': resultado.get('monto'), 'cedula': resultado.get('cedula'), 'texto_completo': resultado.get('texto_completo')}
     finally:
         try:

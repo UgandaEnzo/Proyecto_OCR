@@ -24,7 +24,7 @@ hidden_imports = [
     'reportlab',
     'httpx',
     'bs4',
-    'groq',
+    'openai',
     'fastapi',
     'starlette',
     'pydantic',

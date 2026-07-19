@@ -1,17 +1,15 @@
 import os
 import re
-import json
 import asyncio
 import io
 import cv2
-from groq import AsyncGroq
 import numpy as np
 from PIL import Image
-from pydantic import BaseModel, Field
-from dotenv import load_dotenv
-from ocr_utils import engine
+from pydantic import BaseModel
+from ocr_utils import get_engine
 import bank_rules
 from utils import _extraer_datos_vision, logger
+from ai_client import openrouter
 
 
 class OcrData(BaseModel):
@@ -21,22 +19,20 @@ class OcrData(BaseModel):
     banco: str | None = None
     sudeban_code: str | None = None
 
-load_dotenv()
-
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
-
-client = AsyncGroq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+def _modo_ocr():
+    """Retorna 'local' o 'nube' según MOTOR_OCR_ACTIVO."""
+    return 'local' if os.getenv("MOTOR_OCR_ACTIVO", "rapidocr").lower() == "rapidocr" else 'nube'
 
 def extraer_texto(ruta_imagen):
     """Usa RapidOCR para extraer texto plano de la imagen."""
-    if engine is None:
+    eng = get_engine()
+    if eng is None:
         return ""
     
     try:
         # RapidOCR devuelve (result, elapse_time)
         # result es una lista de [dt_boxes, rec_res, score]
-        result, _ = engine(ruta_imagen)
+        result, _ = eng(ruta_imagen)
         if result:
             # Unimos todos los rec_res (texto detectado) en un solo string
             textos = [line[1] for line in result]
@@ -45,25 +41,9 @@ def extraer_texto(ruta_imagen):
         print(f"❌ [OCR] Error procesando imagen con RapidOCR: {e}")
     return ""
 
-def _extraer_json_de_texto(texto: str) -> dict | None:
-    if not texto:
-        return None
-    texto = texto.strip()
-    encontrado = re.search(r'\{.*\}', texto, re.DOTALL)
-    if encontrado:
-        try:
-            return json.loads(encontrado.group(0))
-        except json.JSONDecodeError:
-            pass
-    try:
-        return json.loads(texto)
-    except json.JSONDecodeError:
-        return None
-
-
 async def limpiar_datos_ia(texto_ocr):
-    """Utiliza Groq (Async) para estructurar el texto sucio del OCR en un JSON limpio."""
-    if not client or not texto_ocr:
+    """Usa OpenRouter (gemma) para estructurar el texto sucio del OCR en un JSON limpio."""
+    if not openrouter.is_available() or not texto_ocr:
         return None
 
     prompt = """
@@ -81,23 +61,13 @@ async def limpiar_datos_ia(texto_ocr):
     """
 
     try:
-        response = await client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": texto_ocr}
-            ],
-            model=GROQ_MODEL,
-            response_format={"type": "json_object"},
-            temperature=0.0,
-        )
-        contenido = response.choices[0].message.content
-        datos = _extraer_json_de_texto(contenido)
+        datos = await openrouter.extract_json(texto_ocr, prompt)
         if datos:
             validated = OcrData(**datos)
             return validated.model_dump()
         return None
     except Exception as e:
-        print(f"⚠️ [IA] Error en limpieza con Groq: {e}")
+        print(f"⚠️ [IA] Error en limpieza con OpenRouter: {e}")
     return None
 
 def limpiar_monto(valor):
@@ -121,8 +91,54 @@ def extract_sudeban_code(texto):
     return None
 
 
+def _parse_local_fallback(texto_ocr):
+    """Parsea el texto del OCR local sin IA. Extrae referencia, monto y cédula con regex."""
+    if not texto_ocr:
+        return None
+    resultado = {"referencia": "No detectada", "monto": 0.0, "cedula": None, "banco": None, "sudeban_code": None}
+    texto = texto_ocr.strip()
+    refs = re.findall(r'\b(\d{6,20})\b', texto)
+    refs_ordenadas = sorted(set(refs), key=len, reverse=True)
+    if refs_ordenadas:
+        for ref in refs_ordenadas:
+            if len(ref) >= 6 and len(ref) <= 20:
+                resultado["referencia"] = ref
+                break
+    montos = re.findall(r'(?:Bs\.?\s*|Bs\s*|Monto\s*:?\s*|Total\s*:?\s*|\.?)\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:\,[0-9]{2})?|[0-9]{1,9}(?:\,[0-9]{2})?)', texto, re.IGNORECASE)
+    for m in montos:
+        try:
+            limpio = m.replace('.', '').replace(',', '.')
+            valor = float(limpio)
+            if valor > 0 and valor < 999999999:
+                resultado["monto"] = valor
+                break
+        except ValueError:
+            continue
+    if resultado["monto"] == 0.0:
+        montos_simples = re.findall(r'\b(\d{3,9}(?:[.,]\d{1,2})?)\b', texto)
+        for m in montos_simples:
+            try:
+                limpio = m.replace(',', '.')
+                valor = float(limpio)
+                if 50 < valor < 999999999:
+                    resultado["monto"] = valor
+                    break
+            except ValueError:
+                continue
+    cedulas = re.findall(r'\b(V|E|J|G|C|L)?[-.]?\s?(\d{6,9})\b', texto, re.IGNORECASE)
+    for prefijo, num in cedulas:
+        if 6 <= len(num) <= 9:
+            resultado["cedula"] = f"{prefijo.upper() if prefijo else ''}{num}"
+            break
+    sudeban = extract_sudeban_code(texto)
+    if sudeban:
+        resultado["sudeban_code"] = sudeban
+    if resultado["referencia"] != "No detectada" or resultado["monto"] > 0:
+        return resultado
+    return None
+
 async def procesar_pago_ocr(image_path, aggressive=False):
-    """Flujo optimizado: RapidOCR con timeout (8s), fallback a Groq Vision."""
+    """Solo decide qué OCR usar según MOTOR_OCR_ACTIVO, sin mezclar cadenas."""
     try:
         with open(image_path, "rb") as f:
             img_bytes = f.read()
@@ -139,29 +155,37 @@ async def procesar_pago_ocr(image_path, aggressive=False):
             logger.error("Imagen inválida: %s", e)
             return {"referencia": "No detectada", "monto": 0.0, "banco_predicho": "Desconocido", "texto_completo": ""}
 
+    modo = _modo_ocr()
     texto_completo = ""
-    try:
-        texto_completo = await asyncio.wait_for(
-            asyncio.to_thread(extraer_texto, image_path), timeout=8.0
-        )
-    except asyncio.TimeoutError:
-        logger.info("OCR local tardó >8s, usando Vision API")
-
     ai_data = None
     source = "UNKNOWN"
 
-    if texto_completo.strip():
-        ai_data = await limpiar_datos_ia(texto_completo)
-        if ai_data:
-            source = "AI_GROQ"
+    if modo == 'local':
+        try:
+            texto_completo = await asyncio.wait_for(
+                asyncio.to_thread(extraer_texto, image_path), timeout=8.0
+            )
+        except asyncio.TimeoutError:
+            logger.info("OCR local tardó >8s")
 
-    if not ai_data:
+        if texto_completo.strip():
+            ai_data = await limpiar_datos_ia(texto_completo)
+            if ai_data:
+                source = "AI_OPENROUTER"
+                logger.info("IA limpió OCR local: ref=%s monto=%s", ai_data.get('referencia'), ai_data.get('monto'))
+            else:
+                local_data = _parse_local_fallback(texto_completo)
+                if local_data:
+                    ai_data = local_data
+                    source = "LOCAL_FALLBACK"
+                    logger.info("Parseo local (fallback) extrajo: ref=%s monto=%s", local_data.get('referencia'), local_data.get('monto'))
+    else:
         try:
             vision_data = await _extraer_datos_vision(img_bytes)
             if vision_data:
                 ai_data = vision_data
                 texto_completo = f"Vision: ref={vision_data.get('referencia')} monto={vision_data.get('monto')}"
-                source = "VISION"
+                source = "VISION_OPENROUTER"
         except Exception as e:
             logger.error("Vision fallback error: %s", e)
 

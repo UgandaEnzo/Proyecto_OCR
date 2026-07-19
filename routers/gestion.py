@@ -11,7 +11,7 @@ import models
 import schemas
 from database import get_db
 from config import get_config_value, set_config_value
-from utils import _get_sqlite_db_path, _get_database_type, uploads_dir
+from utils import _get_sqlite_db_path, _get_database_type, uploads_dir, set_env_value
 
 router = APIRouter(tags=['gestion'])
 
@@ -120,6 +120,8 @@ def guardar_credenciales(data: schemas.GestionCredentials, db: Session=Depends(g
     set_config_value(db, 'ADMIN_PASS', data.admin_pass.strip())
     os.environ['ADMIN_USER'] = data.admin_user.strip()
     os.environ['ADMIN_PASS'] = data.admin_pass.strip()
+    set_env_value('ADMIN_USER', data.admin_user.strip())
+    set_env_value('ADMIN_PASS', data.admin_pass.strip())
     return {'mensaje': 'Credenciales guardadas correctamente.'}
 
 @router.get('/gestion/ocr/mode')
@@ -132,9 +134,10 @@ def actualizar_modo_ocr(data: schemas.GestionOcrMode, db: Session=Depends(get_db
     modo = data.modo.strip().lower()
     if modo not in ['local', 'nube']:
         raise HTTPException(status_code=400, detail='El modo OCR debe ser "local" o "nube".')
-    modo_raw = 'rapidocr' if modo == 'local' else 'groq_vision'
+    modo_raw = 'rapidocr' if modo == 'local' else 'openrouter_vision'
     set_config_value(db, 'MOTOR_OCR_ACTIVO', modo_raw)
     os.environ['MOTOR_OCR_ACTIVO'] = modo_raw
+    set_env_value('MOTOR_OCR_ACTIVO', modo_raw)
     return {'mensaje': f'Modo OCR cambiado a {modo} correctamente.', 'modo': modo}
 
 @router.get('/gestion/reporte/config')

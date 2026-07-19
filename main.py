@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse, FileResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import exc as sa_exc, inspect, text
 base_dir = Path(sys.executable if getattr(sys, 'frozen', False) else __file__).resolve().parent
 dotenv_path = base_dir / '.env'
@@ -36,12 +37,29 @@ async def lifespan(app: FastAPI):
                     "La columna 'tasa_momento' no existe en la tabla 'pagos'. "
                     "Ejecuta: alembic upgrade head"
                 )
+            if 'motor' not in columnas_pagos:
+                logger.info("Agregando columna 'motor' a la tabla 'pagos'...")
+                try:
+                    with engine.connect() as conn:
+                        conn.execute(text("ALTER TABLE pagos ADD COLUMN motor VARCHAR"))
+                        conn.commit()
+                    logger.info("Columna 'motor' agregada correctamente.")
+                except Exception as e:
+                    logger.error("No se pudo agregar la columna 'motor': %s", e)
         logger.info('Sistema de Base de Datos inicializado: Tablas verificadas.')
         logger.info('🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)')
     except Exception as e:
         logger.error('❌ Error crítico al inicializar la base de datos: %s', e)
     yield
 app = FastAPI(docs_url='/api/docs', redoc_url=None, openapi_url='/api/openapi.json', lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.exception_handler(sa_exc.OperationalError)
 def handle_db_operational_error(request, exc):

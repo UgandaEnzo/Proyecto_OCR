@@ -1,13 +1,13 @@
 Sistema de Conciliación de Pagos con OCR y IA
 =============================================
 
-Este proyecto es una solución de backend y panel administrativo construida con FastAPI para automatizar la conciliación de pagos. Utiliza **RapidOCR** para la extracción de texto, **Groq** para análisis semántico, y **SQLAlchemy** para la gestión de datos y auditoría.
+Este proyecto es una solución de backend y panel administrativo construida con FastAPI para automatizar la conciliación de pagos. Utiliza **RapidOCR** para la extracción de texto local, **OpenRouter (Qwen)** con dos modelos especializados para análisis, purificación y visión, y **SQLAlchemy** para la gestión de datos y auditoría.
 
 ## Características principales
 
 -   **Carga de pagos por imagen**: administra recibos y comprobantes con extracción OCR.
--   **OCR + IA**: combinación de RapidOCR y Groq para detectar referencia, monto, banco y datos de pago.
--   **Detección híbrida de bancos**: detección visual con Groq Vision y validación por OCR para mayor precisión.
+-   **OCR + IA**: combinación de RapidOCR y OpenRouter (Qwen) para detectar referencia, monto, banco y datos de pago.
+-   **Detección híbrida de bancos**: detección visual con OpenRouter Vision y validación por reglas locales para mayor precisión.
 -   **Vista previa Base64 instantánea**: la imagen se renderiza en el navegador y se envía comprimida para evitar cargas excesivas.
 -   **Exportes máximos**: reportes en `PDF` y `XLSX` con periodos `diario`, `semanal`, `quincenal`, `mensual`, `trimestral`, `semestral` y `anual`.
 -   **Normalización de períodos**: el campo `Periodo` se formatea correctamente para evitar desbordes y errores de presentación.
@@ -73,7 +73,7 @@ Este proyecto se ha probado con las siguientes versiones aproximadas de dependen
 - `sqlalchemy` 2.0.x
 - `openpyxl` 3.1.x
 - `reportlab` 4.x
-- `groq` 1.0.x
+- `openai` 1.55.x (cliente HTTP para OpenRouter)
 - `httpx` 0.24.x
 - `python-dotenv` 1.x
 
@@ -83,13 +83,14 @@ Crea un archivo `.env` en la raíz del proyecto con al menos estas variables:
 
 ```env
 DATABASE_URL="postgresql://user:password@host:port/database"
-GROQ_API_KEY="gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-GROQ_MODEL="openai/gpt-oss-120b"
+OPENROUTER_API_KEY="sk-or-v1-xxxxxxxxxxxxxxxxxxxx"
 LOG_LEVEL=INFO
 MAX_UPLOAD_MB=10
 ```
 
-> Nota: para detección visual se usa `qwen/qwen3.6-27b` (hardcodeado en `utils.py`). Para el procesamiento de texto se recomienda `GROQ_MODEL="openai/gpt-oss-120b"`. Ambos modelos reemplazan a `llama-3.3-70b-versatile` y `meta-llama/llama-4-scout-17b-16e-instruct` que fueron deprecados por Groq en agosto 2026.
+> La IA usa OpenRouter con dos modelos gratuitos especializados:
+> - **Visión / OCR nube**: `google/gemma-4-26b-a4b-it:free` — analiza comprobantes bancarios y extrae datos estructurados.
+> - **Texto / Chat / Purificación**: `nvidia/nemotron-3-super-120b-a12b:free` — limpia texto ruidoso del OCR local y responde consultas del asistente.
 >
 > Si no usas `DATABASE_URL`, puedes definir las variables separadas `DB_USER`, `DB_PASS`, `DB_HOST`, `DB_PORT` y `DB_NAME`.
 
@@ -129,7 +130,7 @@ El artefacto resultante se genera en `dist\OcrApp.exe` o en la carpeta `dist` as
 - `GET /reportes/` → devuelve reportes agregados por período
 - `GET /reportes/export/` → exporta reportes en `pdf` o `xlsx`
 - `POST /subir-pago/` → sube comprobante de pago por imagen
-- `POST /detectar-banco-vision/` → detecta banco e intenta leer datos usando Groq Vision + OCR
+- `POST /detectar-banco-vision/` → detecta banco e intenta leer datos usando OpenRouter Vision + OCR
 - `POST /pago-manual/` → crea pago manual sin imagen
 - `GET /clientes/` → lista clientes
 - `POST /clientes/` → crea cliente
@@ -143,11 +144,24 @@ El artefacto resultante se genera en `dist\OcrApp.exe` o en la carpeta `dist` as
 
 El ejecutable carga `.env` desde el directorio del ejecutable o desde sus padres. Si no se encuentra, muestra una advertencia y deja de usar variables de entorno basadas en archivo.
 
-### Error 401 con Groq
+### Error 401 con OpenRouter
 
-- Revisa `GROQ_API_KEY`.
+- Revisa `OPENROUTER_API_KEY` en `.env`.
 - Asegúrate de que la clave no tenga espacios invisibles.
-- El sistema puede reintentar con lógica de fallback si la IA no responde.
+- Si OpenRouter no responde, el sistema usa RapidOCR + parseo local como respaldo.
+
+### 2026-07-19 (2): Cambio de modelo de visión
+
+- `VISION_MODEL` migrado de `qwen/qwen-2.5-vl-7b-instruct:free` (ya sin endpoints gratuitos) a `google/gemma-4-26b-a4b-it:free`.
+
+### 2026-07-19: Correcciones en panel de gestión y OCR
+
+- Se corrigió el guardado de clave OpenRouter: el frontend ahora respeta el estado real devuelto por el servidor en vez de forzar `'online'`.
+- Se corrigió el selector de modo OCR en el panel de gestión: ahora `procesar_pago_ocr` respeta dinámicamente `MOTOR_OCR_ACTIVO`:
+  - **Local**: RapidOCR + limpieza con IA (OpenRouter text) → fallback a parseo local con regex.
+  - **Nube**: OpenRouter Vision, sin tocar RapidOCR.
+- El motor RapidOCR se inicializa bajo demanda (`get_engine()`) evaluando `MOTOR_OCR_ACTIVO` en cada llamada, permitiendo cambiar el modo sin reiniciar el servidor.
+- Se eliminaron todas las referencias a Groq del frontend (panel de gestión).
 
 ## Actualizaciones recientes
 
@@ -163,6 +177,15 @@ El ejecutable carga `.env` desde el directorio del ejecutable o desde sus padres
 - El selector de bancos y el filtro de pagos usan la lista canónica de `bank_rules`.
 - El backend normaliza el banco en pagos manuales.
 - Se agregó un sistema de detección dual con texto y reglas visuales para mejorar la identificación de bancos.
+
+### 2026-07-19: Unificación de IA bajo OpenRouter (v2)
+
+- Se eliminó Groq y los modelos `qwen/qwen3.6-27b` y `openai/gpt-oss-120b`.
+- Nueva capa de IA en `ai_client.py` con dos modelos OpenRouter especializados:
+  - **Visión**: `google/gemma-4-26b-a4b-it:free` (OCR nube + detección de bancos)
+  - **Texto**: `nvidia/nemotron-3-super-120b-a12b:free` (purificación OCR + chat asistente)
+- Parseo local (`_parse_local_fallback`) como respaldo cuando OpenRouter no está disponible.
+- Dependencia `groq` reemplazada por `openai`.
 
 ### 2026-04-01: Módulo BCV robusto
 

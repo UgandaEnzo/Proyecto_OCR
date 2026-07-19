@@ -771,6 +771,19 @@ createApp({
             if (estado === 'falso') return 'Falso';
             return 'No Verificado';
         },
+        formatMotor(motor) {
+            if (!motor) return 'Desconocido';
+            const mapping = {
+                'LOCAL_FALLBACK': 'Local (RapidOCR + Regex)',
+                'AI_OPENROUTER': 'Local (RapidOCR + IA OpenRouter)',
+                'VISION_OPENROUTER': 'Nube (OpenRouter Vision)',
+                'CONFIRMED_BOT': 'Bot Telegram n8n',
+                'MANUAL': 'Manual',
+                'UNKNOWN': 'Desconocido',
+                'RULES_LEGACY': 'Reglas (legacy)',
+            };
+            return mapping[motor] || motor;
+        },
         formatAccion(accion) {
             const mapping = {
                 cambio_estado: 'Cambio de estado',
@@ -838,7 +851,7 @@ createApp({
         },
         async guardarGestionApiKey() {
             if (!this.gestionApiKey.trim()) {
-                this.showToast('Debes ingresar una clave Groq válida', 'warning');
+                this.showToast('Debes ingresar una clave OpenRouter válida', 'warning');
                 return;
             }
             try {
@@ -849,13 +862,14 @@ createApp({
                 });
                 const data = await resp.json();
                 if (resp.ok) {
-                    this.showToast(data.mensaje || 'Clave Groq guardada', 'success');
-                    this.gestionState = 'online';
+                    this.showToast(data.mensaje || 'Clave OpenRouter guardada', 'success');
+                    this.gestionState = data.state || 'offline';
+                    await this.cargarGestionStatus();
                 } else {
-                    this.showToast(data.detail || 'No se pudo guardar la clave Groq', 'danger');
+                    this.showToast(data.detail || 'No se pudo guardar la clave OpenRouter', 'danger');
                 }
             } catch (err) {
-                this.showToast('Error al guardar la clave Groq', 'danger');
+                this.showToast('Error al guardar la clave OpenRouter', 'danger');
             }
         },
         async cargarModoOcr() {

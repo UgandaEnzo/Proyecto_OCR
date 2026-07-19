@@ -51,6 +51,28 @@ def registrar_auditoria(db: Session, pago_id: int, accion: str, detalles: str):
     db.add(nuevo_historial)
     db.commit()
 
+def set_env_value(key: str, value: str):
+    """Escribe o actualiza una variable en el archivo .env."""
+    env_path = Path('.env')
+    if env_path.exists():
+        lines = env_path.read_text(encoding='utf-8').splitlines()
+    else:
+        lines = []
+    key_upper = key.upper()
+    found = False
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith('#') or '=' not in stripped:
+            continue
+        k = stripped.split('=', 1)[0].strip().upper()
+        if k == key_upper:
+            lines[i] = f'{key_upper}={value}'
+            found = True
+            break
+    if not found:
+        lines.append(f'{key_upper}={value}')
+    env_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
 def _get_database_type() -> str:
     url = SQLALCHEMY_DATABASE_URL.lower()
     if url.startswith('sqlite://'):
@@ -70,17 +92,18 @@ def _get_sqlite_db_path() -> Optional[Path]:
         return Path(sqlite_path).resolve()
     return None
 
-async def _verificar_estado_groq(api_key: str) -> tuple[bool, str]:
+async def _verificar_estado_ia(api_key: str) -> tuple[bool, str]:
     if not api_key:
-        return (False, 'No se ha configurado la clave Groq.')
+        return (False, 'No se ha configurado la clave OpenRouter.')
     try:
-        from groq import AsyncGroq
-        client = AsyncGroq(api_key=api_key, timeout=3.0)
-        await client.chat.completions.create(messages=[{'role': 'user', 'content': 'Responde con pong'}], model=os.getenv('GROQ_MODEL', 'openai/gpt-oss-120b'), temperature=0.0, max_tokens=1, timeout=3.0)
-        return (True, 'Clave Groq cargada y verificada.')
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(api_key=api_key, base_url="https://openrouter.ai/api/v1")
+        from ai_client import openrouter
+        await client.chat.completions.create(messages=[{'role': 'user', 'content': 'Responde con pong'}], model=openrouter.TEXT_MODEL, temperature=0.0, max_tokens=1)
+        return (True, 'Clave OpenRouter verificada correctamente.')
     except Exception as e:
-        logger.warning('No se pudo verificar Groq API: %s', e)
-        return (False, 'No se puede conectar a Groq. Comprueba tu conexión a internet y la clave de API.')
+        logger.warning('No se pudo verificar OpenRouter: %s', e)
+        return (False, 'No se puede conectar a OpenRouter. Comprueba tu conexion y clave API.')
 
 def _agregar_total_reporte(resultado: List[dict]) -> dict:
     total_bs = sum((item['total_bs'] for item in resultado))
@@ -455,123 +478,41 @@ def _crear_nombre_archivo(tipo_reporte: str, formato: str) -> str:
     sufijo = datetime.now().strftime('%Y%m%d%H%M%S')
     return f'reportes-{tipo_reporte}-{sufijo}.{formato}'
 
-def _strip_thinking_tags(texto: str) -> str:
-    """Elimina bloques <think>...</think> de modelos Qwen, incluso si no está cerrado."""
-    texto = re.sub(r'<think>.*?</think>', '', texto, flags=re.DOTALL)
-    texto = re.sub(r'<think>.*', '', texto, flags=re.DOTALL)
-    return texto.strip()
-
-def _parse_groq_bank_response(texto: str) -> dict:
-    if not texto:
+def _parse_vision_response(data: dict) -> dict:
+    if not data:
         return {}
-    texto = _strip_thinking_tags(texto)
-    try:
-        encontrado = re.search('\\{.*\\}', texto, re.S)
-        if encontrado:
-            return json.loads(encontrado.group(0))
-    except Exception:
-        pass
-    parsed = {}
-    match = re.search('"?banco_predicho"?\\s*[:=]\\s*"?([^"\\\'\\n]+)', texto, re.I)
-    if match:
-        parsed['banco_predicho'] = match.group(1).strip()
-    match = re.search('"?sudeban_code"?\\s*[:=]\\s*"?([^"\\\'\\n]+)', texto, re.I)
-    if match:
-        parsed['sudeban_code'] = match.group(1).strip()
-    if not parsed:
-        parsed['banco_predicho'] = texto.splitlines()[0].strip()
-    return parsed
+    return {
+        'banco_predicho': data.get('banco') or data.get('banco_predicho') or data.get('banco_ia'),
+        'sudeban_code': data.get('sudeban_code'),
+    }
 
-def _comprimir_imagen_para_groq(image_bytes: bytes, max_side: int=600, quality: int=50) -> bytes:
-    try:
-        with Image.open(io.BytesIO(image_bytes)) as img:
-            img = img.convert('RGB')
-            max_dimension = max(img.width, img.height)
-            if max_dimension > max_side:
-                scale = max_side / max_dimension
-                img = img.resize((max(1, int(img.width * scale)), max(1, int(img.height * scale))), Image.Resampling.LANCZOS)
-            with io.BytesIO() as output:
-                img.save(output, format='JPEG', quality=quality, optimize=True)
-                return output.getvalue()
-    except Exception as e:
-        logger.debug('No se pudo comprimir la imagen para Groq, se usa el original: %s', e)
-        return image_bytes
-
-VISION_MODEL = "qwen/qwen3.6-27b"
-
-async def _detectar_banco_con_groq(image_bytes: bytes) -> dict:
-    api_key = os.getenv('GROQ_API_KEY', '').strip()
-    if not api_key:
+async def _detectar_banco_con_vision(image_bytes: bytes) -> dict:
+    from ai_client import openrouter
+    if not openrouter.is_available():
         return {}
-    from groq import AsyncGroq
-    client = AsyncGroq(api_key=api_key)
-    image_bytes_for_groq = _comprimir_imagen_para_groq(image_bytes)
-    image_b64 = base64.b64encode(image_bytes_for_groq).decode('utf-8')
-    prompt_text = '/no_think Extrae banco_predicho y sudeban_code de este comprobante. JSON solido.'
+    prompt_text = 'Extrae banco_predicho y sudeban_code de este comprobante. JSON solido.'
     try:
-        response = await client.chat.completions.create(messages=[{'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': f"data:image/jpeg;base64,{image_b64}"}}, {'type': 'text', 'text': prompt_text}]}], model=VISION_MODEL, temperature=0.0, max_tokens=4096)
-        content = ''
-        if getattr(response, 'choices', None):
-            choice = response.choices[0]
-            message = getattr(choice, 'message', None)
-            if isinstance(message, dict):
-                content = message.get('content', '')
-            elif hasattr(message, 'content'):
-                content = message.content or ''
-            else:
-                content = str(message or '')
-        return _parse_groq_bank_response(content)
+        result = await openrouter.analyze_image(image_bytes, prompt_text)
+        if result:
+            return _parse_vision_response(result)
+        return {}
     except Exception as e:
-        logger.warning('Groq Vision fallo: %s', e)
+        logger.warning('OpenRouter Vision fallo: %s', e)
     return {}
 
-def _parse_json_response(content: str) -> dict | None:
-    """Extrae y parsea el primer JSON object de un texto."""
-    if not content:
-        return None
-    content = _strip_thinking_tags(content)
-    encontrado = re.search(r'\{.*\}', content, re.DOTALL)
-    if encontrado:
-        try:
-            return json.loads(encontrado.group(0))
-        except json.JSONDecodeError:
-            pass
-    try:
-        return json.loads(content.strip())
-    except (json.JSONDecodeError, ValueError):
-        pass
-    return None
-
 async def _extraer_datos_vision(image_bytes: bytes) -> dict | None:
-    """Envía imagen a Groq Vision y extrae monto, referencia, banco, cedula y sudeban_code."""
-    api_key = os.getenv('GROQ_API_KEY', '').strip()
-    if not api_key:
+    """Envía imagen a OpenRouter Vision y extrae monto, referencia, banco, cedula y sudeban_code."""
+    from ai_client import openrouter
+    if not openrouter.is_available():
         return None
-    from groq import AsyncGroq
-    client = AsyncGroq(api_key=api_key)
-    compressed = _comprimir_imagen_para_groq(image_bytes)
-    image_b64 = base64.b64encode(compressed).decode('utf-8')
-    prompt_text = """/no_think Extrae monto (float), referencia (digitos), banco (nombre), cedula (string), sudeban_code (4 digitos) de este comprobante. JSON solido. null si no visible."""
+    prompt_text = "Extrae monto (float), referencia (digitos), banco (nombre), cedula (string), sudeban_code (4 digitos) de este comprobante. JSON solido. null si no visible."
     try:
-        response = await client.chat.completions.create(
-            messages=[{"role": "user", "content": [{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}, {"type": "text", "text": prompt_text}]}],
-            model=VISION_MODEL, temperature=0.0, max_tokens=4096
-        )
-        content = ''
-        if getattr(response, 'choices', None):
-            msg = response.choices[0].message
-            if isinstance(msg, dict):
-                content = msg.get('content', '')
-            elif hasattr(msg, 'content'):
-                content = msg.content or ''
-            else:
-                content = str(msg or '')
-        result = _parse_json_response(content)
+        result = await openrouter.analyze_image(image_bytes, prompt_text)
         if result:
             logger.info('Vision extrajo: ref=%s monto=%s banco=%s', result.get('referencia'), result.get('monto'), result.get('banco'))
         else:
-            logger.warning('Vision no pudo extraer JSON de: %s', content[:200])
+            logger.warning('Vision no pudo extraer JSON')
         return result
     except Exception as e:
-        logger.warning('Groq Vision extracción falló: %s', e)
+        logger.warning('OpenRouter Vision extraccion fallo: %s', e)
     return None

@@ -277,15 +277,15 @@
                     <div class="status-row">
                         <span class="status-led" :class="{ 'led-on': gestionState === 'online', 'led-off': gestionState !== 'online' }"></span>
                         <div>
-                            <strong>Estado Groq API:</strong> {{ gestionState === 'online' ? 'Activa' : gestionState === 'invalid_key' ? 'No configurada' : 'No disponible' }}
-                            <p class="text-muted">{{ gestionState === 'online' ? 'La clave está disponible para procesamiento local.' : (gestionState === 'invalid_key' ? 'Configura la clave para habilitar IA y llamadas locales.' : 'No hay conexión a Groq o la clave no es accesible.') }}</p>
+                            <strong>Estado OpenRouter:</strong> {{ gestionState === 'online' ? 'Activa' : gestionState === 'invalid_key' ? 'No configurada' : 'No disponible' }}
+                            <p class="text-muted">{{ gestionState === 'online' ? 'La clave está disponible para procesamiento en la nube.' : (gestionState === 'invalid_key' ? 'Configura la clave para habilitar IA y llamadas en la nube.' : 'No hay conexión a OpenRouter o la clave no es accesible.') }}</p>
                         </div>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Clave Groq</label>
-                        <input type="text" class="form-control" v-model="gestionApiKey" placeholder="Ingresa tu clave Groq aquí">
+                        <label class="form-label">Clave OpenRouter</label>
+                        <input type="text" class="form-control" v-model="gestionApiKey" placeholder="Ingresa tu clave OpenRouter aquí">
                     </div>
-                    <button class="btn btn-primary" @click="guardarGestionApiKey">Guardar Clave Groq</button>
+                    <button class="btn btn-primary" @click="guardarGestionApiKey">Guardar Clave OpenRouter</button>
 
                     <hr class="my-4">
                     <h6 class="mb-3">Configuración OCR</h6>
@@ -298,11 +298,11 @@
                             </label>
                             <label class="ocr-option" :class="{ selected: gestionOcrMode === 'nube' }">
                                 <input type="radio" v-model="gestionOcrMode" value="nube">
-                                <span>Nube (Groq Vision)</span>
+                                <span>Nube (OpenRouter Vision)</span>
                             </label>
                         </div>
                         <div v-if="gestionOcrMode === 'nube'" class="alert alert-warning mt-2" style="background: rgba(255,188,75,0.12); border-color: rgba(255,188,75,0.24); color: #ffe29e; padding: 0.75rem; border-radius: 0.75rem; font-size: 0.85rem;">
-                            ⚠️ Al usar el modo Nube se consumirán más tokens de Groq. Asegúrate de tener suficientes tokens disponibles en tu cuenta.
+                            ⚠️ Al usar el modo Nube se consumirán más llamadas a OpenRouter. Asegúrate de tener suficientes solicitudes disponibles.
                         </div>
                     </div>
                     <button class="btn btn-info" @click="aplicarCambiosOcr" :disabled="gestionOcrSaving">
@@ -640,6 +640,7 @@
                             <li class="list-group-item">Banco: <strong>{{ pagoSeleccionado.banco }}</strong></li>
                             <li class="list-group-item">Estado: <strong>{{ pagoSeleccionado.estado }}</strong></li>
                             <li v-if="pagoSeleccionado.cliente" class="list-group-item">Cliente: <strong>{{ pagoSeleccionado.cliente.nombre }}</strong></li>
+                            <li class="list-group-item">Motor: <strong>{{ formatMotor(pagoSeleccionado.motor) }}</strong></li>
                             <li class="list-group-item">Registrado: <small>{{ new Date(pagoSeleccionado.fecha_registro).toLocaleDateString() }}</small></li>
                         </ul>
                     </div>

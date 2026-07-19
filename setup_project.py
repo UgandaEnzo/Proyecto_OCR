@@ -103,7 +103,7 @@ def setup_and_build():
             '--hidden-import',
             'dotenv',
             '--hidden-import',
-            'groq',
+            'openai',
             '--hidden-import',
             'fastapi',
             '--hidden-import',

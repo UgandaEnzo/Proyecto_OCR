@@ -312,3 +312,185 @@ connection to server at "aws-1-us-east-2.pooler.supabase.com" (13.58.13.125), po
 2026-07-13 13:50:41,857 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
 2026-07-13 13:51:06,462 WARNING ocr_api - No se pudo verificar Groq API: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
 2026-07-13 13:52:49,755 WARNING ocr_api - No se pudo verificar Groq API: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
+2026-07-19 11:07:58,247 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-19 11:07:58,248 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-19 11:08:13,582 WARNING ocr_api - No se pudo verificar Groq API: Error code: 403 - {'error': {'message': 'Forbidden'}}
+2026-07-19 11:08:34,733 WARNING ocr_api - No se pudo verificar Groq API: Error code: 403 - {'error': {'message': 'Forbidden'}}
+2026-07-19 11:09:06,166 WARNING ocr_api - No se pudo verificar Groq API: Error code: 403 - {'error': {'message': 'Forbidden'}}
+2026-07-19 11:09:14,401 WARNING ocr_api - No se pudo verificar Groq API: Error code: 403 - {'error': {'message': 'Forbidden'}}
+2026-07-19 11:09:23,201 WARNING ocr_api - No se pudo verificar Groq API: Error code: 403 - {'error': {'message': 'Forbidden'}}
+2026-07-19 11:10:21,718 WARNING ocr_api - No se pudo verificar Groq API: Error code: 403 - {'error': {'message': 'Forbidden'}}
+2026-07-19 11:10:24,021 WARNING ocr_api - No se pudo verificar Groq API: Error code: 403 - {'error': {'message': 'Forbidden'}}
+2026-07-19 11:10:33,813 WARNING ocr_api - Groq Vision fallo: Error code: 403 - {'error': {'message': 'Forbidden'}}
+2026-07-19 11:10:35,554 WARNING ocr_api - Groq Vision extracción falló: Error code: 403 - {'error': {'message': 'Forbidden'}}
+2026-07-19 11:10:42,899 WARNING ocr_api - Groq Vision extracción falló: Error code: 403 - {'error': {'message': 'Forbidden'}}
+2026-07-19 17:02:49,247 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-19 17:02:49,247 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-19 17:04:13,435 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-19 17:04:13,435 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-19 17:05:14,913 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-19 17:05:14,913 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-19 17:05:29,321 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-19 17:05:29,321 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-19 17:05:55,275 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-19 17:05:55,275 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-19 17:07:30,811 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-19 17:07:30,811 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-19 17:07:49,922 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-19 17:07:49,923 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-19 17:09:38,472 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-19 17:09:38,472 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-19 17:09:48,997 WARNING ocr_api - No se pudo verificar OpenRouter: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Google AI Studio', 'is_byok': False, 'provider_error_code': '429'}}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:10:18,052 WARNING ocr_api - No se pudo verificar OpenRouter: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Google AI Studio', 'is_byok': False, 'provider_error_code': '429'}}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:12:42,015 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-19 17:12:42,016 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-19 17:12:52,492 WARNING ocr_api - No se pudo verificar OpenRouter: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Google AI Studio', 'is_byok': False, 'provider_error_code': '429'}}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:12:57,952 WARNING ocr_api - No se pudo verificar OpenRouter: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Google AI Studio', 'is_byok': False, 'provider_error_code': '429'}}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:14:40,446 WARNING ocr_api - No se pudo verificar OpenRouter: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Google AI Studio', 'is_byok': False, 'provider_error_code': '429'}}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:14:44,581 WARNING ocr_api - No se pudo verificar OpenRouter: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Google AI Studio', 'is_byok': False, 'provider_error_code': '429'}}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:15:54,484 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-19 17:15:54,484 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-19 17:19:04,957 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-19 17:19:04,957 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-19 17:20:48,300 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Google AI Studio', 'is_byok': False, 'provider_error_code': '429'}}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:20:48,736 WARNING ocr_api - OpenRouter extract_json fallo: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Google AI Studio', 'is_byok': False, 'provider_error_code': '429'}}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:20:51,916 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Google AI Studio', 'is_byok': False, 'provider_error_code': '429'}}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:20:51,917 WARNING ocr_api - Vision no pudo extraer JSON
+2026-07-19 17:20:51,919 INFO ocr_api - Parseo local extrajo: ref=004974513005 monto=8151.54
+2026-07-19 17:21:20,815 WARNING ocr_api - OpenRouter extract_json fallo: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Google AI Studio', 'is_byok': False, 'provider_error_code': '429'}}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:21:20,844 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Google AI Studio', 'is_byok': False, 'provider_error_code': '429'}}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:21:26,547 INFO ocr_api - Vision extrajo: ref=004285882896 monto=750.0 banco=BBVA PROVINCIAL
+2026-07-19 17:21:39,886 WARNING ocr_api - OpenRouter extract_json fallo: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Google AI Studio', 'is_byok': False, 'provider_error_code': '429'}}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:21:45,348 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Google AI Studio', 'is_byok': False, 'provider_error_code': '429'}}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:21:45,349 WARNING ocr_api - Vision no pudo extraer JSON
+2026-07-19 17:21:45,350 INFO ocr_api - Parseo local extrajo: ref=004285882896 monto=750.0
+2026-07-19 17:22:14,388 WARNING ocr_api - OpenRouter extract_json fallo: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Google AI Studio', 'is_byok': False, 'provider_error_code': '429'}}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:22:14,445 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Google AI Studio', 'is_byok': False, 'provider_error_code': '429'}}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:22:18,345 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Google AI Studio', 'is_byok': False, 'provider_error_code': '429'}}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:22:18,346 WARNING ocr_api - Vision no pudo extraer JSON
+2026-07-19 17:22:18,347 INFO ocr_api - Parseo local extrajo: ref=004285882896 monto=750.0
+2026-07-19 17:22:20,756 WARNING ocr_api - OpenRouter extract_json fallo: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Google AI Studio', 'is_byok': False, 'provider_error_code': '429'}}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:22:24,501 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Google AI Studio', 'is_byok': False, 'provider_error_code': '429'}}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:22:24,501 WARNING ocr_api - Vision no pudo extraer JSON
+2026-07-19 17:22:24,503 INFO ocr_api - Parseo local extrajo: ref=004285882896 monto=750.0
+2026-07-19 17:23:38,494 WARNING ocr_api - No se pudo verificar OpenRouter: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Google AI Studio', 'is_byok': False, 'provider_error_code': '429'}}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:23:46,509 WARNING ocr_api - No se pudo verificar OpenRouter: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Google AI Studio', 'is_byok': False, 'provider_error_code': '429'}}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:37:36,339 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-19 17:37:36,340 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-19 17:38:14,829 WARNING ocr_api - No se pudo verificar OpenRouter: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:38:21,960 WARNING ocr_api - No se pudo verificar OpenRouter: Error code: 404 - {'error': {'message': 'This model is unavailable for free. The paid version is available now - use this slug instead: qwen/qwen3-next-80b-a3b-instruct', 'code': 404}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:38:39,034 WARNING ocr_api - No se pudo verificar OpenRouter: Error code: 404 - {'error': {'message': 'This model is unavailable for free. The paid version is available now - use this slug instead: qwen/qwen3-next-80b-a3b-instruct', 'code': 404}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:38:48,015 WARNING ocr_api - No se pudo verificar OpenRouter: Error code: 404 - {'error': {'message': 'This model is unavailable for free. The paid version is available now - use this slug instead: qwen/qwen3-next-80b-a3b-instruct', 'code': 404}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:39:10,230 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 400 - {'error': {'message': 'qwen/qwen2.5-vl-7b-instruct:free is not a valid model ID', 'code': 400}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:39:10,581 WARNING ocr_api - OpenRouter extract_json fallo: Error code: 404 - {'error': {'message': 'This model is unavailable for free. The paid version is available now - use this slug instead: qwen/qwen3-next-80b-a3b-instruct', 'code': 404}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:39:11,105 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 400 - {'error': {'message': 'qwen/qwen2.5-vl-7b-instruct:free is not a valid model ID', 'code': 400}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:39:11,105 WARNING ocr_api - Vision no pudo extraer JSON
+2026-07-19 17:39:11,107 INFO ocr_api - Parseo local extrajo: ref=004285882896 monto=750.0
+2026-07-19 17:39:17,060 WARNING ocr_api - OpenRouter extract_json fallo: Error code: 404 - {'error': {'message': 'This model is unavailable for free. The paid version is available now - use this slug instead: qwen/qwen3-next-80b-a3b-instruct', 'code': 404}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:39:18,183 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 400 - {'error': {'message': 'qwen/qwen2.5-vl-7b-instruct:free is not a valid model ID', 'code': 400}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 17:39:18,183 WARNING ocr_api - Vision no pudo extraer JSON
+2026-07-19 17:39:18,184 INFO ocr_api - Parseo local extrajo: ref=004285882896 monto=750.0
+2026-07-19 17:47:53,470 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-19 17:47:53,470 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-19 17:49:04,291 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:49:06,255 WARNING ocr_api - OpenRouter extract_json fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:49:07,054 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:49:07,055 WARNING ocr_api - Vision no pudo extraer JSON
+2026-07-19 17:49:07,057 INFO ocr_api - Parseo local extrajo: ref=060263813276 monto=5.0
+2026-07-19 17:49:15,478 WARNING ocr_api - OpenRouter extract_json fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:49:15,887 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:49:15,888 WARNING ocr_api - Vision no pudo extraer JSON
+2026-07-19 17:49:15,889 INFO ocr_api - Parseo local extrajo: ref=060263813276 monto=5.0
+2026-07-19 17:49:42,565 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:49:43,709 WARNING ocr_api - OpenRouter extract_json fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:49:44,161 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:49:44,161 WARNING ocr_api - Vision no pudo extraer JSON
+2026-07-19 17:49:44,162 INFO ocr_api - Parseo local extrajo: ref=04140520145 monto=48300.0
+2026-07-19 17:49:49,190 WARNING ocr_api - OpenRouter extract_json fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:49:49,664 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:49:49,664 WARNING ocr_api - Vision no pudo extraer JSON
+2026-07-19 17:49:49,665 INFO ocr_api - Parseo local extrajo: ref=04140520145 monto=48300.0
+2026-07-19 17:50:03,917 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:50:04,707 WARNING ocr_api - OpenRouter extract_json fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:50:05,114 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:50:05,114 WARNING ocr_api - Vision no pudo extraer JSON
+2026-07-19 17:50:05,115 INFO ocr_api - Parseo local extrajo: ref=060263813276 monto=5.0
+2026-07-19 17:50:14,046 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:50:16,073 WARNING ocr_api - OpenRouter extract_json fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:50:17,013 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:50:17,014 WARNING ocr_api - Vision no pudo extraer JSON
+2026-07-19 17:50:17,015 INFO ocr_api - Parseo local extrajo: ref=053399293435 monto=53.0
+2026-07-19 17:50:25,917 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:50:26,362 WARNING ocr_api - OpenRouter extract_json fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:50:26,929 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:50:26,929 WARNING ocr_api - Vision no pudo extraer JSON
+2026-07-19 17:50:26,930 INFO ocr_api - Parseo local extrajo: ref=No detectada monto=15.0
+2026-07-19 17:50:36,569 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:50:38,210 WARNING ocr_api - OpenRouter extract_json fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:50:39,176 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:50:39,177 WARNING ocr_api - Vision no pudo extraer JSON
+2026-07-19 17:50:39,178 INFO ocr_api - Parseo local extrajo: ref=651013086 monto=873.0
+2026-07-19 17:54:31,965 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-19 17:54:31,965 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-19 17:55:08,045 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:55:10,088 WARNING ocr_api - OpenRouter extract_json fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:55:10,485 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 17:55:10,485 WARNING ocr_api - Vision no pudo extraer JSON
+2026-07-19 17:55:10,486 INFO ocr_api - Parseo local extrajo: ref=060263813276 monto=5.0
+2026-07-19 18:14:48,248 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-19 18:14:48,249 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-19 18:15:22,290 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 404 - {'error': {'message': 'No endpoints found for qwen/qwen-2.5-vl-7b-instruct:free.', 'code': 404}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 18:15:32,167 INFO ocr_api - IA limpió OCR local: ref=060263813276 monto=3555.0
+2026-07-19 18:15:46,680 INFO ocr_api - IA limpió OCR local: ref=060263813276 monto=3555.0
+2026-07-19 18:16:22,033 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 404 - {'error': {'message': 'No endpoints found for qwen/qwen-2.5-vl-7b-instruct:free.', 'code': 404}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 18:16:25,961 INFO ocr_api - IA limpió OCR local: ref=0000022405 monto=300.0
+2026-07-19 18:16:36,928 INFO ocr_api - IA limpió OCR local: ref=0000022405 monto=300.0
+2026-07-19 18:16:55,385 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 404 - {'error': {'message': 'No endpoints found for qwen/qwen-2.5-vl-7b-instruct:free.', 'code': 404}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 18:17:06,893 INFO ocr_api - IA limpió OCR local: ref=651013086 monto=20800.0
+2026-07-19 18:17:30,764 INFO ocr_api - IA limpió OCR local: ref=651013086 monto=20800.0
+2026-07-19 18:17:46,014 INFO ocr_api - IA limpió OCR local: ref=651013086 monto=20800.0
+2026-07-19 18:18:03,891 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 404 - {'error': {'message': 'No endpoints found for qwen/qwen-2.5-vl-7b-instruct:free.', 'code': 404}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 18:18:06,263 INFO ocr_api - IA limpió OCR local: ref=059133140131 monto=1500.0
+2026-07-19 18:18:15,359 INFO ocr_api - IA limpió OCR local: ref=059133140131 monto=1500.0
+2026-07-19 18:18:44,469 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 404 - {'error': {'message': 'No endpoints found for qwen/qwen-2.5-vl-7b-instruct:free.', 'code': 404}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 18:18:49,273 INFO ocr_api - IA limpió OCR local: ref=004285882896 monto=750.0
+2026-07-19 18:19:06,455 INFO ocr_api - IA limpió OCR local: ref=004285882896 monto=750.0
+2026-07-19 18:19:40,642 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 404 - {'error': {'message': 'No endpoints found for qwen/qwen-2.5-vl-7b-instruct:free.', 'code': 404}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 18:19:46,359 INFO ocr_api - IA limpió OCR local: ref=219903779 monto=12513.88
+2026-07-19 18:19:59,373 INFO ocr_api - IA limpió OCR local: ref=219903779 monto=12513.88
+2026-07-19 18:20:23,364 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 404 - {'error': {'message': 'No endpoints found for qwen/qwen-2.5-vl-7b-instruct:free.', 'code': 404}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 18:20:30,185 INFO ocr_api - IA limpió OCR local: ref=000016232258 monto=120.0
+2026-07-19 18:21:05,757 INFO ocr_api - IA limpió OCR local: ref=000016232258 monto=120.0
+2026-07-19 18:21:23,152 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 404 - {'error': {'message': 'No endpoints found for qwen/qwen-2.5-vl-7b-instruct:free.', 'code': 404}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 18:21:29,251 INFO ocr_api - IA limpió OCR local: ref=48315180217 monto=10.0
+2026-07-19 18:21:45,169 INFO ocr_api - IA limpió OCR local: ref=48315180217 monto=10.0
+2026-07-19 18:22:17,788 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 404 - {'error': {'message': 'No endpoints found for qwen/qwen-2.5-vl-7b-instruct:free.', 'code': 404}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 18:22:17,880 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 404 - {'error': {'message': 'No endpoints found for qwen/qwen-2.5-vl-7b-instruct:free.', 'code': 404}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 18:22:17,880 WARNING ocr_api - Vision no pudo extraer JSON
+2026-07-19 18:22:53,463 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 404 - {'error': {'message': 'No endpoints found for qwen/qwen-2.5-vl-7b-instruct:free.', 'code': 404}, 'user_id': 'user_3CleXaQe2t3jyD7Xz9o9HoRLVVd'}
+2026-07-19 18:22:53,463 WARNING ocr_api - Vision no pudo extraer JSON
+2026-07-19 18:36:22,234 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-19 18:36:22,235 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-19 18:36:46,149 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 18:36:47,356 WARNING ocr_api - OpenRouter extract_json fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 18:36:47,357 INFO ocr_api - Parseo local (fallback) extrajo: ref=006516645452 monto=11.0
+2026-07-19 18:37:17,098 WARNING ocr_api - OpenRouter analyze_image fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 18:37:17,433 WARNING ocr_api - OpenRouter extract_json fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 18:37:17,433 INFO ocr_api - Parseo local (fallback) extrajo: ref=006516645452 monto=11.0
+2026-07-19 18:37:24,902 WARNING ocr_api - OpenRouter extract_json fallo: Error code: 401 - {'error': {'message': 'User not found.', 'code': 401}}
+2026-07-19 18:37:24,902 INFO ocr_api - Parseo local (fallback) extrajo: ref=006516645452 monto=11.0
+2026-07-19 18:40:36,858 INFO ocr_api - IA limpió OCR local: ref=006516645452 monto=4000.0
+2026-07-19 18:40:58,484 INFO ocr_api - IA limpió OCR local: ref=006516645452 monto=4000.0
+2026-07-19 18:41:13,251 INFO ocr_api - IA limpió OCR local: ref=006516645452 monto=4000.0
+2026-07-19 18:53:34,282 INFO ocr_api - Agregando columna 'motor' a la tabla 'pagos'...
+2026-07-19 18:53:34,295 INFO ocr_api - Columna 'motor' agregada correctamente.
+2026-07-19 18:53:34,295 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-19 18:53:34,295 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-19 18:55:17,803 INFO ocr_api - Vision extrajo: ref=006516645452 monto=4000.0 banco=BANCO DE VENEZUELA
+2026-07-19 18:55:28,943 INFO ocr_api - Vision extrajo: ref=006516645452 monto=4000.0 banco=BANCO DE VENEZUELA
+2026-07-19 18:56:34,845 INFO ocr_api - IA limpió OCR local: ref=48313805390 monto=7823.0
+2026-07-19 18:57:02,985 INFO ocr_api - IA limpió OCR local: ref=48313805390 monto=7823.0
+2026-07-19 19:02:25,191 INFO ocr_api - Sistema de Base de Datos inicializado: Tablas verificadas.
+2026-07-19 19:02:25,192 INFO ocr_api - 🚀 [SISTEMA] Arquitectura OCR: RapidOCR (Motor Único)
+2026-07-19 19:03:05,317 INFO ocr_api - IA limpió OCR local: ref=48313805390 monto=7823.0
+2026-07-19 19:03:56,326 INFO ocr_api - IA limpió OCR local: ref=48313805390 monto=7823.0
